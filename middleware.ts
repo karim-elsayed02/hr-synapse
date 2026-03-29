@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createSupabaseMiddlewareClient } from "@/lib/supabase/middleware"
+// Use a relative import so the Edge bundle resolves on Vercel (path aliases in middleware can fail).
+import { createSupabaseMiddlewareClient } from "./lib/supabase/middleware"
 
 const PUBLIC_PATHS = new Set([
   "/",
