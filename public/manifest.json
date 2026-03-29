@@ -1,0 +1,27 @@
+{
+  "name": "SynapseUK Staff Platform",
+  "short_name": "SynapseUK",
+  "description": "Staff platform for SynapseUK team members",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/images/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/images/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "categories": ["productivity", "business"],
+  "lang": "en-GB",
+  "dir": "ltr"
+}
