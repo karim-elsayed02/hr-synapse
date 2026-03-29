@@ -27,35 +27,55 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const publicPath = isPublicPath(pathname)
 
-  const { supabase, response, error } = createSupabaseMiddlewareClient(request)
+  try {
+    const { supabase, response, error } = createSupabaseMiddlewareClient(request)
 
-  if (error || !supabase) {
+    if (error || !supabase) {
+      return response
+    }
+
+    const { data, error: authError } = await supabase.auth.getUser()
+
+    if (authError) {
+      console.error("[middleware] getUser:", authError.message)
+      if (!publicPath) {
+        const url = request.nextUrl.clone()
+        url.pathname = "/login"
+        return NextResponse.redirect(url)
+      }
+      return response
+    }
+
+    const user = data.user
+
+    if (!user && !publicPath) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/login"
+      return NextResponse.redirect(url)
+    }
+
+    if (
+      user &&
+      (pathname === "/" ||
+        pathname === "/login" ||
+        pathname === "/register" ||
+        pathname === "/forgot-password")
+    ) {
+      const url = request.nextUrl.clone()
+      url.pathname = "/dashboard"
+      return NextResponse.redirect(url)
+    }
+
     return response
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user && !publicPath) {
+  } catch (err) {
+    console.error("[middleware] uncaught:", err)
+    if (publicPath) {
+      return NextResponse.next({ request })
+    }
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
   }
-
-  if (
-    user &&
-    (pathname === "/" ||
-      pathname === "/login" ||
-      pathname === "/register" ||
-      pathname === "/forgot-password")
-  ) {
-    const url = request.nextUrl.clone()
-    url.pathname = "/dashboard"
-    return NextResponse.redirect(url)
-  }
-
-  return response
 }
 
 export const config = {
