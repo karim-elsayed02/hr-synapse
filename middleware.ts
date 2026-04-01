@@ -1,10 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
-import type { GoTrueClient } from "@supabase/auth-js"
+import type { User } from "@supabase/supabase-js"
 // Use a relative import so the Edge bundle resolves on Vercel (path aliases in middleware can fail).
 import { createSupabaseMiddlewareClient } from "./lib/supabase/middleware"
 
-/** Runtime auth client always exposes getUser; some TS versions narrow `auth` to a stub. */
-type GoTrueAuth = InstanceType<typeof GoTrueClient>
+/**
+ * getUser exists at runtime; some TS versions narrow `auth` to SupabaseAuthClient without it.
+ * Use only `@supabase/supabase-js` here so pnpm/Vercel can resolve types without a direct `@supabase/auth-js` dep.
+ */
+type AuthWithGetUser = {
+  getUser: () => Promise<{
+    data: { user: User | null }
+    error: { message: string } | null
+  }>
+}
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -39,7 +47,7 @@ export async function middleware(request: NextRequest) {
     }
 
     const { data, error: authError } = await (
-      supabase.auth as unknown as GoTrueAuth
+      supabase.auth as unknown as AuthWithGetUser
     ).getUser()
 
     if (authError) {
