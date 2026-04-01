@@ -13,7 +13,10 @@ export function createSupabaseMiddlewareClient(request: NextRequest): {
   response: NextResponse
   error: string | null
 } {
-  let response = NextResponse.next({ request })
+  // Pass headers only — full `NextRequest` here breaks Edge middleware (MIDDLEWARE_INVOCATION_FAILED on Vercel).
+  let response = NextResponse.next({
+    request: { headers: request.headers },
+  })
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY

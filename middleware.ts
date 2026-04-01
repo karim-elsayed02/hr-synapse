@@ -85,7 +85,9 @@ export async function middleware(request: NextRequest) {
   } catch (err) {
     console.error("[middleware] uncaught:", err)
     if (publicPath) {
-      return NextResponse.next({ request })
+      return NextResponse.next({
+        request: { headers: request.headers },
+      })
     }
     const url = request.nextUrl.clone()
     url.pathname = "/login"
