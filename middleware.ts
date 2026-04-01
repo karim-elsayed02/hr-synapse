@@ -1,120 +1,93 @@
-import { type NextRequest, NextResponse } from "next/server";
-import { createSupabaseMiddlewareClient } from "./lib/supabase/middleware";
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = new Set([
-  "/",
-  "/login",
-  "/register",
-  "/forgot-password",
-  "/reset-password",
-]);
+const PUBLIC = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password"]);
 
-function isPublicPath(pathname: string) {
+function isPublic(p: string) {
   return (
-    PUBLIC_PATHS.has(pathname) ||
-    pathname.startsWith("/auth") ||
-    pathname.startsWith("/api") ||
-    pathname.startsWith("/images") ||
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/manifest.json" ||
-    /\.(svg|png|jpg|jpeg|gif|webp|ico)$/.test(pathname)
+    PUBLIC.has(p) ||
+    p.startsWith("/auth") ||
+    p.startsWith("/api") ||
+    p.startsWith("/images") ||
+    p.startsWith("/_next") ||
+    p === "/favicon.ico" ||
+    p === "/manifest.json" ||
+    /\.(svg|png|jpg|jpeg|gif|webp|ico)$/.test(p)
   );
 }
 
-/** Redirect while copying Set-Cookie from the Supabase middleware response (session refresh). */
-function redirectWithCookies(
-  request: NextRequest,
-  pathname: string,
-  from: NextResponse
-) {
-  const url = request.nextUrl.clone();
-  url.pathname = pathname;
-  const redirect = NextResponse.redirect(url);
-  try {
-    for (const c of from.cookies.getAll()) {
-      try {
-        redirect.cookies.set(c);
-      } catch (e) {
-        console.error("[middleware] redirect cookies.set failed:", c.name, e);
-      }
-    }
-  } catch (e) {
-    console.error("[middleware] redirect cookie merge failed:", e);
-  }
-  return redirect;
-}
-
 export async function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
-  const publicPath = isPublicPath(pathname);
+  const { pathname } = request.nextUrl;
+  const pub = isPublic(pathname);
+
+  // Build the response that will carry any refreshed session cookies.
+  let response = NextResponse.next({ request: { headers: request.headers } });
 
   try {
-    const { supabase, response, error } = createSupabaseMiddlewareClient(request);
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    if (error || !supabase) {
+    if (!url || !key) {
+      // Env vars missing — let the request through so pages can render their own error.
       return response;
     }
 
-    // Call real getUser — avoid importing types that break on Vercel/pnpm.
-    const auth = supabase.auth as {
-      getUser: () => Promise<{
-        data: { user: { id: string } | null } | null;
-        error: { message?: string } | null;
-      }>;
-    };
+    const supabase = createServerClient(url, key, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          // Must never throw — an unhandled error here crashes Edge middleware on Vercel.
+          for (const c of cookiesToSet) {
+            try {
+              response.cookies.set(c.name, c.value, c.options ?? {});
+            } catch {
+              // cookie too large / invalid — skip silently
+            }
+          }
+        },
+      },
+    });
 
-    let data: { user: { id: string } | null } | null = null;
-    let authError: { message?: string } | null = null;
+    // getUser() validates the JWT; refreshes the session if needed.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).auth.getUser();
 
-    try {
-      const result = await auth.getUser();
-      data = result?.data ?? null;
-      authError = result?.error ?? null;
-    } catch (e) {
-      console.error("[middleware] getUser threw:", e);
-      if (!publicPath) {
-        return redirectWithCookies(request, "/login", response);
-      }
-      return response;
+    const user = error ? null : data?.user ?? null;
+
+    // Not logged in → redirect protected routes to /login
+    if (!user && !pub) {
+      return redirect(request, "/login", response);
     }
 
-    if (authError) {
-      console.error("[middleware] getUser:", authError.message ?? authError);
-      if (!publicPath) {
-        return redirectWithCookies(request, "/login", response);
-      }
-      return response;
-    }
-
-    const user = data?.user ?? null;
-
-    if (!user && !publicPath) {
-      return redirectWithCookies(request, "/login", response);
-    }
-
-    if (
-      user &&
-      (pathname === "/" ||
-        pathname === "/login" ||
-        pathname === "/register" ||
-        pathname === "/forgot-password")
-    ) {
-      return redirectWithCookies(request, "/dashboard", response);
+    // Logged in → bounce auth pages to /dashboard
+    if (user && PUBLIC.has(pathname)) {
+      return redirect(request, "/dashboard", response);
     }
 
     return response;
-  } catch (err) {
-    console.error("[middleware] uncaught:", err);
-    if (publicPath) {
-      return NextResponse.next({
-        request: { headers: request.headers },
-      });
-    }
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+  } catch (e) {
+    console.error("[middleware]", e);
+    // On any unexpected error let public pages through; redirect protected ones.
+    if (pub) return response;
+    return NextResponse.redirect(new URL("/login", request.url));
   }
+}
+
+/** Redirect while preserving any Set-Cookie headers the Supabase client wrote. */
+function redirect(request: NextRequest, to: string, from: NextResponse) {
+  const url = request.nextUrl.clone();
+  url.pathname = to;
+  const res = NextResponse.redirect(url);
+  for (const cookie of from.cookies.getAll()) {
+    try {
+      res.cookies.set(cookie);
+    } catch {
+      // skip
+    }
+  }
+  return res;
 }
 
 export const config = {
