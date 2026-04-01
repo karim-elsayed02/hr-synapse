@@ -1,15 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
-import type { User } from "@supabase/supabase-js"
 // Use a relative import so the Edge bundle resolves on Vercel (path aliases in middleware can fail).
 import { createSupabaseMiddlewareClient } from "./lib/supabase/middleware"
 
 /**
  * getUser exists at runtime; some TS versions narrow `auth` to SupabaseAuthClient without it.
- * Use only `@supabase/supabase-js` here so pnpm/Vercel can resolve types without a direct `@supabase/auth-js` dep.
+ * Local user shape only — do not import `User` from supabase-js (export varies across TS / package resolutions on Vercel).
  */
+type AuthUserPayload = { id: string }
+
 type AuthWithGetUser = {
   getUser: () => Promise<{
-    data: { user: User | null }
+    data: { user: AuthUserPayload | null }
     error: { message: string } | null
   }>
 }
