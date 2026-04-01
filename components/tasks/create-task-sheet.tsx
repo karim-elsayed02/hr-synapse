@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -26,12 +27,13 @@ interface CreateTaskSheetProps {
   canCreate: boolean;
   branches: Branch[];
   subBranches: SubBranch[];
-  createAction: (formData: FormData) => Promise<any>;
 }
 
-export function CreateTaskSheet({ canCreate, branches, subBranches, createAction }: CreateTaskSheetProps) {
+export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTaskSheetProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedBranch, setSelectedBranch] = useState("");
 
   const filteredSubs = selectedBranch
@@ -40,14 +42,39 @@ export function CreateTaskSheet({ canCreate, branches, subBranches, createAction
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    setSubmitError(null);
     setPending(true);
     try {
       const fd = new FormData(e.currentTarget);
-      await createAction(fd);
+      const payload = {
+        title: String(fd.get("title") ?? "").trim(),
+        description: String(fd.get("description") ?? "").trim() || null,
+        branchId: String(fd.get("branchId") ?? "").trim() || null,
+        subBranchId: String(fd.get("subBranchId") ?? "").trim() || null,
+        assignedHours: Number(fd.get("assignedHours")) || 1,
+        dueDate: String(fd.get("dueDate") ?? "").trim() || null,
+      };
+
+      const res = await fetch("/api/tasks/create-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "same-origin",
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setSubmitError(typeof json.error === "string" ? json.error : "Failed to create task");
+        return;
+      }
+
       setOpen(false);
       setSelectedBranch("");
+      router.refresh();
     } catch (err) {
       console.error("Create task failed:", err);
+      setSubmitError("Something went wrong. Please try again.");
     } finally {
       setPending(false);
     }
@@ -85,6 +112,11 @@ export function CreateTaskSheet({ canCreate, branches, subBranches, createAction
           </div>
         ) : (
         <form onSubmit={handleSubmit} className="space-y-5 px-6 pb-6 pt-4">
+          {submitError && (
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200/80">
+              {submitError}
+            </p>
+          )}
           <fieldset disabled={pending} className="space-y-5">
             <div>
               <label htmlFor="ct-title" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">

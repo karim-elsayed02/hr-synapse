@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
-import { createClient } from "@/lib/supabase/client";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Sparkles, Activity } from "lucide-react";
 
@@ -29,32 +28,6 @@ type DashboardData = {
   };
   activities: ActivityItem[];
 };
-
-async function safeCount(
-  supabase: ReturnType<typeof createClient>,
-  table: string,
-  filter?: (query: any) => any
-): Promise<number> {
-  try {
-    let query = supabase.from(table).select("*", { count: "estimated", head: true });
-
-    if (filter) {
-      query = filter(query);
-    }
-
-    const { count, error } = await query;
-
-    if (error) {
-      console.error(`Count failed for ${table}:`, error);
-      return 0;
-    }
-
-    return count ?? 0;
-  } catch (error) {
-    console.error(`Count crashed for ${table}:`, error);
-    return 0;
-  }
-}
 
 export default function DashboardPage() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -84,78 +57,64 @@ export default function DashboardPage() {
         setLoading(true);
         setErrorMessage(null);
 
-      
-        const DASHBOARD_FETCH_MS = 25000;
+        const res = await fetch("/api/dashboard", { credentials: "same-origin" });
+        const body = await res.json().catch(() => ({}));
 
-        const loadCore = async () => {
-          const userIds = new Set<string>();
-          const profileMap = new Map<string, string>();
-          const requestsData = await fetch('/api/requests/my-requests');
-          const requests = await requestsData.json();
-          const tasksData = await fetch('/api/tasks/my-tasks');
-          const tasks = await tasksData.json();
-          const documentsData = await fetch('/api/documents/my-documents');
-          const documents = await documentsData.json();
-          const name = await fetch ('/api/profile/name');
-          const nameData = await name.json();
+        if (!res.ok) {
+          const msg =
+            typeof body?.error === "string"
+              ? body.error
+              : res.status === 401
+                ? "Not authenticated"
+                : "Failed to load dashboard";
+          throw new Error(msg);
+        }
+
+        if (!cancelled) {
           setDashboardData({
             stats: {
-              totalStaff: nameData.length,
-              tasksOpen: tasks.length,
-              tasksInProgress: tasks.length,
-              tasksCompleted: tasks.length,
+              totalStaff: Number(body.stats?.totalStaff) || 0,
+              tasksOpen: Number(body.stats?.tasksOpen) || 0,
+              tasksInProgress: Number(body.stats?.tasksInProgress) || 0,
+              tasksCompleted: Number(body.stats?.tasksCompleted) || 0,
             },
-            activities: requests.map((request: any) => ({
-              id: request.id,
-              type: 'request',
-              title: request.title,
-            })),
+            activities: Array.isArray(body.activities) ? body.activities : [],
           });
-
-         
-        };
-
-        await Promise.race([
-          loadCore(),
-          new Promise<void>((_, reject) =>
-            setTimeout(
-              () => reject(new Error(`Dashboard data fetch timed out after ${DASHBOARD_FETCH_MS}ms`)),
-              DASHBOARD_FETCH_MS
-            )
-          ),
-        ]);
+        }
       } catch (error) {
-        console.error("Dashboard crashed:", error);
-
+        console.error("Dashboard fetch error:", error);
         if (!cancelled) {
           setErrorMessage(
             error instanceof Error ? error.message : "Failed to load dashboard"
           );
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
-    if (!authLoading && !user) {
+    if (authLoading) {
+      return;
+    }
+
+    if (!user) {
       router.replace("/login");
       return;
     }
 
-    if (user) {
-      fetchDashboardData();
-    }
+    fetchDashboardData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authLoading, user, router]);
 
+  if (authLoading) {
+    return <LoadingSpinner text="Loading session..." className="min-h-screen" />;
+  }
+
   if (!user) {
-    return (
-      <LoadingSpinner
-        text={authLoading ? "Loading session..." : "Redirecting..."}
-        className="min-h-screen"
-      />
-    );
+    return <LoadingSpinner text="Redirecting..." className="min-h-screen" />;
   }
 
   if (loading) {

@@ -2,12 +2,15 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   approveTask,
+  assignTaskToUser,
   claimTask,
-  createTaskAction,
   markTaskCompleted,
   markTaskInProgress,
+  reopenTaskFromCompleted,
+  unassignTask,
 } from "@/lib/actions/task-actions";
 import { CreateTaskSheet } from "@/components/tasks/create-task-sheet";
+import { RecentTaskLogs } from "@/components/tasks/recent-task-logs";
 import { CalendarDays, SlidersHorizontal } from "lucide-react";
 
 type TaskRow = {
@@ -69,10 +72,6 @@ function formatShortDate(iso: string | null) {
   }
 }
 
-function statusLabel(s: string) {
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 export default async function TasksPage() {
   const supabase = createClient();
 
@@ -128,11 +127,19 @@ export default async function TasksPage() {
   const canCreate = profile.role === "admin" || profile.role === "manager";
   const isAdmin = profile.role === "admin";
 
+  let staffForAssign: { id: string; full_name: string | null }[] = [];
+  if (canCreate) {
+    const { data: staffRows } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .order("full_name");
+    staffForAssign = (staffRows ?? []) as { id: string; full_name: string | null }[];
+  }
+
   const openTasks = tasks.filter((t) => t.status === "open");
   const progressTasks = tasks.filter((t) => t.status === "claimed" || t.status === "in_progress");
-  const doneTasks = tasks.filter((t) => t.status === "completed" || t.status === "approved");
-
-  const recentLogs = tasks.slice(0, 6);
+  /** Completed column: awaiting approval only — approved tasks appear in Recent Task Logs only. */
+  const doneTasks = tasks.filter((t) => t.status === "completed");
 
   return (
     <div className="space-y-8">
@@ -151,12 +158,7 @@ export default async function TasksPage() {
             <SlidersHorizontal className="h-4 w-4" />
             Filters
           </button>
-          <CreateTaskSheet
-            canCreate={canCreate}
-            branches={branches}
-            subBranches={subBranches}
-            createAction={createTaskAction}
-          />
+          <CreateTaskSheet canCreate={canCreate} branches={branches} subBranches={subBranches} />
         </div>
       </div>
 
@@ -169,7 +171,14 @@ export default async function TasksPage() {
           emptyLabel="No open tasks"
         >
           {openTasks.map((task) => (
-            <TaskCard key={task.id} task={task} userId={user.id} isAdmin={isAdmin} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              userId={user.id}
+              isAdmin={isAdmin}
+              isManager={canCreate}
+              staff={staffForAssign}
+            />
           ))}
         </KanbanColumn>
 
@@ -180,7 +189,14 @@ export default async function TasksPage() {
           emptyLabel="No tasks in progress"
         >
           {progressTasks.map((task) => (
-            <TaskCard key={task.id} task={task} userId={user.id} isAdmin={isAdmin} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              userId={user.id}
+              isAdmin={isAdmin}
+              isManager={canCreate}
+              staff={staffForAssign}
+            />
           ))}
         </KanbanColumn>
 
@@ -191,75 +207,20 @@ export default async function TasksPage() {
           emptyLabel="No completed tasks"
         >
           {doneTasks.map((task) => (
-            <TaskCard key={task.id} task={task} userId={user.id} isAdmin={isAdmin} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              userId={user.id}
+              isAdmin={isAdmin}
+              isManager={canCreate}
+              staff={staffForAssign}
+            />
           ))}
         </KanbanColumn>
       </div>
 
-      {/* ─── Recent task logs ─── */}
-      <div className="curator-card overflow-hidden p-0">
-        <div className="flex items-center justify-between px-6 pb-2 pt-6">
-          <h2 className="font-display text-lg font-semibold text-[#001A3D]">Recent Task Logs</h2>
-        </div>
-
-        {recentLogs.length === 0 ? (
-          <p className="px-6 pb-8 pt-4 text-center text-sm text-[#001A3D]/40">No task activity yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#001A3D]/40">
-                  <th className="px-6 py-3">Task details</th>
-                  <th className="px-4 py-3">Branch</th>
-                  <th className="px-4 py-3">Assigned to</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentLogs.map((task) => {
-                  const branch = rel(task.branch);
-                  const claimer = rel(task.claimed_by_profile);
-                  return (
-                    <tr
-                      key={task.id}
-                      className="transition-colors hover:bg-[#f8f9fa]"
-                    >
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-[#001A3D]">{task.title}</p>
-                        <p className="mt-0.5 text-xs text-[#001A3D]/40">
-                          ID: {task.id.slice(0, 8)}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4 text-[#001A3D]/65">
-                        {branch?.name ?? "—"}
-                      </td>
-                      <td className="px-4 py-4">
-                        {claimer ? (
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-[10px] font-semibold text-[#FFB84D]">
-                              {claimer.full_name?.charAt(0)?.toUpperCase() ?? "?"}
-                            </span>
-                            <span className="text-[#001A3D]/75">{claimer.full_name ?? "Unknown"}</span>
-                          </div>
-                        ) : (
-                          <span className="text-[#001A3D]/35">Unclaimed</span>
-                        )}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-4 text-[#001A3D]/55">
-                        {formatShortDate(task.created_at) ?? "—"}
-                      </td>
-                      <td className="px-4 py-4 text-right">
-                        <StatusPill status={task.status} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Full history including approved — search filters by title, ID, or assignee */}
+      <RecentTaskLogs tasks={tasks} />
     </div>
   );
 }
@@ -310,21 +271,43 @@ function TaskCard({
   task,
   userId,
   isAdmin,
+  isManager,
+  staff,
 }: {
   task: TaskRow;
   userId: string;
   isAdmin: boolean;
+  isManager: boolean;
+  staff: { id: string; full_name: string | null }[];
 }) {
   const branch = rel(task.branch);
   const claimer = rel(task.claimed_by_profile);
   const progress = statusProgress(task.status);
   const tag = tagColor(branch?.name ?? null);
 
+  const isTerminal = task.status === "approved";
+  const isLocked = task.status === "completed" || task.status === "approved";
+
   const canClaim = task.status === "open";
-  const canStart = task.status === "claimed" && task.claimed_by === userId;
+  const canStart =
+    task.status === "claimed" && (task.claimed_by === userId || isManager);
   const canComplete = task.status === "in_progress" && task.claimed_by === userId;
   const canApprove = isAdmin && task.status === "completed";
-  const hasAction = canClaim || canStart || canComplete || canApprove;
+  const canAssign = isManager && !isLocked;
+  const canUnassign =
+    isManager &&
+    !isLocked &&
+    (task.status === "claimed" || task.status === "in_progress" || task.status === "cancelled");
+  const canReopenCompleted = isManager && task.status === "completed";
+
+  const hasAction =
+    canClaim ||
+    canStart ||
+    canComplete ||
+    canApprove ||
+    canAssign ||
+    canUnassign ||
+    canReopenCompleted;
 
   return (
     <div className="curator-card group relative overflow-hidden p-5 transition-transform duration-200 hover:-translate-y-0.5">
@@ -385,72 +368,108 @@ function TaskCard({
 
       {/* Action buttons */}
       {hasAction && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {canClaim && (
-            <form action={claimTask}>
+        <div className="mt-4 space-y-3">
+          {canAssign && staff.length > 0 && (
+            <form action={assignTaskToUser} className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
               <input type="hidden" name="taskId" value={task.id} />
+              <select
+                name="assigneeId"
+                required
+                defaultValue={task.claimed_by ?? ""}
+                className="min-w-0 flex-1 rounded-xl border-0 bg-[#f3f4f5] px-3 py-2 text-xs text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+              >
+                <option value="" disabled>
+                  {task.claimed_by ? "Reassign to…" : "Assign to…"}
+                </option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.full_name || s.id.slice(0, 8)}
+                  </option>
+                ))}
+              </select>
               <button
                 type="submit"
-                className="rounded-full bg-[#FFB84D] px-4 py-1.5 text-xs font-semibold text-[#291800] shadow-sm transition-colors hover:bg-[#f5a84a]"
+                className="shrink-0 rounded-full bg-[#001A3D] px-4 py-2 text-xs font-semibold text-[#FFB84D] transition-colors hover:bg-[#011b3e]"
               >
-                Claim
+                Assign
               </button>
             </form>
           )}
-          {canStart && (
-            <form action={markTaskInProgress}>
-              <input type="hidden" name="taskId" value={task.id} />
-              <button
-                type="submit"
-                className="rounded-full bg-sky-100 px-4 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-200"
-              >
-                Start
-              </button>
-            </form>
-          )}
-          {canComplete && (
-            <form action={markTaskCompleted}>
-              <input type="hidden" name="taskId" value={task.id} />
-              <button
-                type="submit"
-                className="rounded-full bg-emerald-100 px-4 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-200"
-              >
-                Complete
-              </button>
-            </form>
-          )}
-          {canApprove && (
-            <form action={approveTask}>
-              <input type="hidden" name="taskId" value={task.id} />
-              <button
-                type="submit"
-                className="rounded-full bg-[#FFB84D] px-4 py-1.5 text-xs font-semibold text-[#291800] shadow-sm transition-colors hover:bg-[#f5a84a]"
-              >
-                Approve
-              </button>
-            </form>
-          )}
+
+          <div className="flex flex-wrap gap-2">
+            {canClaim && (
+              <form action={claimTask}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <button
+                  type="submit"
+                  className="rounded-full bg-[#FFB84D] px-4 py-1.5 text-xs font-semibold text-[#291800] shadow-sm transition-colors hover:bg-[#f5a84a]"
+                >
+                  Claim
+                </button>
+              </form>
+            )}
+            {canStart && (
+              <form action={markTaskInProgress}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <button
+                  type="submit"
+                  className="rounded-full bg-sky-100 px-4 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-200"
+                >
+                  {isManager && task.claimed_by !== userId ? "Set in progress" : "Start"}
+                </button>
+              </form>
+            )}
+            {canComplete && (
+              <form action={markTaskCompleted}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <button
+                  type="submit"
+                  className="rounded-full bg-emerald-100 px-4 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-200"
+                >
+                  Complete
+                </button>
+              </form>
+            )}
+            {canUnassign && (
+              <form action={unassignTask}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <button
+                  type="submit"
+                  className="rounded-full bg-[#001A3D]/10 px-4 py-1.5 text-xs font-semibold text-[#001A3D] transition-colors hover:bg-[#001A3D]/15"
+                >
+                  Unassign
+                </button>
+              </form>
+            )}
+            {canReopenCompleted && (
+              <form action={reopenTaskFromCompleted}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <button
+                  type="submit"
+                  className="rounded-full bg-sky-100 px-4 py-1.5 text-xs font-semibold text-sky-800 transition-colors hover:bg-sky-200"
+                >
+                  Back to in progress
+                </button>
+              </form>
+            )}
+            {canApprove && (
+              <form action={approveTask}>
+                <input type="hidden" name="taskId" value={task.id} />
+                <button
+                  type="submit"
+                  className="rounded-full bg-[#FFB84D] px-4 py-1.5 text-xs font-semibold text-[#291800] shadow-sm transition-colors hover:bg-[#f5a84a]"
+                >
+                  Approve
+                </button>
+              </form>
+            )}
+          </div>
         </div>
+      )}
+      {isTerminal && (
+        <p className="mt-3 text-xs text-[#001A3D]/40">Approved — no further changes.</p>
       )}
     </div>
   );
 }
 
-function StatusPill({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    open: "bg-[#FFB84D]/15 text-[#291800]",
-    claimed: "bg-amber-100 text-amber-800",
-    in_progress: "bg-sky-100 text-sky-700",
-    completed: "bg-emerald-100 text-emerald-700",
-    approved: "bg-emerald-50 text-emerald-600",
-    cancelled: "bg-[#001A3D]/8 text-[#001A3D]/50",
-  };
-
-  return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${styles[status] ?? styles.open}`}
-    >
-      {statusLabel(status)}
-    </span>
-  );
-}

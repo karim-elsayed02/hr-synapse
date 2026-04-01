@@ -261,21 +261,143 @@ export async function claimTask(formData: FormData) {
 }
 
 export async function markTaskInProgress(formData: FormData) {
-  const { supabase, user } = await requireUser();
+  const { supabase, user, profile } = await requireUser();
   const taskId = String(formData.get("taskId") ?? "");
 
   if (!taskId) throw new Error("Missing taskId");
+
+  const { data: task, error: fetchErr } = await supabase
+    .from("tasks")
+    .select("claimed_by, status")
+    .eq("id", taskId)
+    .single();
+
+  if (fetchErr || !task) throw new Error("Task not found");
+  if (task.status !== "claimed") throw new Error("Only claimed tasks can be moved to in progress");
+
+  const isElevated = isAdminOrManager(profile.role);
+  if (!isElevated && task.claimed_by !== user.id) {
+    throw new Error("Not assigned to this task");
+  }
 
   const { error } = await supabase
     .from("tasks")
     .update({ status: "in_progress" })
     .eq("id", taskId)
-    .eq("claimed_by", user.id)
     .eq("status", "claimed");
 
   if (error) throw new Error(error.message);
 
   revalidatePath("/tasks");
+}
+
+/** Admin/manager: assign or reassign a task (not completed / approved). */
+export async function assignTaskToUser(formData: FormData) {
+  const { supabase, profile } = await requireUser();
+  if (!isAdminOrManager(profile.role)) {
+    throw new Error("Only admins or managers can assign tasks");
+  }
+
+  const taskId = String(formData.get("taskId") ?? "").trim();
+  const assigneeId = String(formData.get("assigneeId") ?? "").trim();
+  if (!taskId) throw new Error("Missing taskId");
+  if (!assigneeId) throw new Error("Choose a team member");
+
+  const { data: task, error: taskErr } = await supabase
+    .from("tasks")
+    .select("status")
+    .eq("id", taskId)
+    .single();
+
+  if (taskErr || !task) throw new Error("Task not found");
+  if (task.status === "completed" || task.status === "approved") {
+    throw new Error("Cannot assign completed or approved tasks");
+  }
+
+  const { data: assignee, error: profileErr } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", assigneeId)
+    .maybeSingle();
+
+  if (profileErr || !assignee) throw new Error("User not found");
+
+  const nextStatus = task.status === "in_progress" ? "in_progress" : "claimed";
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      claimed_by: assigneeId,
+      claimed_at: new Date().toISOString(),
+      status: nextStatus,
+    })
+    .eq("id", taskId)
+    .in("status", ["open", "claimed", "in_progress", "cancelled"]);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/tasks");
+}
+
+/** Admin/manager: clear assignee and return task to open (not completed / approved). */
+export async function unassignTask(formData: FormData) {
+  const { supabase, profile } = await requireUser();
+  if (!isAdminOrManager(profile.role)) {
+    throw new Error("Only admins or managers can unassign tasks");
+  }
+
+  const taskId = String(formData.get("taskId") ?? "").trim();
+  if (!taskId) throw new Error("Missing taskId");
+
+  const { data: task, error: taskErr } = await supabase
+    .from("tasks")
+    .select("status")
+    .eq("id", taskId)
+    .single();
+
+  if (taskErr || !task) throw new Error("Task not found");
+  if (task.status === "completed" || task.status === "approved") {
+    throw new Error("Cannot unassign completed or approved tasks");
+  }
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      claimed_by: null,
+      claimed_at: null,
+      status: "open",
+    })
+    .eq("id", taskId)
+    .in("status", ["claimed", "in_progress", "cancelled"]);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/tasks");
+}
+
+/** Admin/manager: move a completed (pre-approval) task back to in progress. */
+export async function reopenTaskFromCompleted(formData: FormData) {
+  const { supabase, profile } = await requireUser();
+  if (!isAdminOrManager(profile.role)) {
+    throw new Error("Only admins or managers can reopen tasks");
+  }
+
+  const taskId = String(formData.get("taskId") ?? "").trim();
+  if (!taskId) throw new Error("Missing taskId");
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status: "in_progress",
+      completed_at: null,
+    })
+    .eq("id", taskId)
+    .eq("status", "completed");
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/tasks");
+  revalidatePath("/payroll");
 }
 
 export async function markTaskCompleted(formData: FormData) {
