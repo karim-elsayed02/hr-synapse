@@ -1,11 +1,18 @@
 import { createServerClient } from "@supabase/ssr"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { type NextRequest, NextResponse } from "next/server"
+
+export type MiddlewareSupabase = SupabaseClient
 
 /**
  * Supabase browser session cookies — use only in middleware.
  * Returns the response you must return from middleware so Set-Cookie merges apply.
  */
-export function createSupabaseMiddlewareClient(request: NextRequest) {
+export function createSupabaseMiddlewareClient(request: NextRequest): {
+  supabase: MiddlewareSupabase | null
+  response: NextResponse
+  error: string | null
+} {
   let response = NextResponse.next({ request })
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -13,13 +20,13 @@ export function createSupabaseMiddlewareClient(request: NextRequest) {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return {
-      supabase: null as ReturnType<typeof createServerClient> | null,
+      supabase: null,
       response,
       error: "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY",
     }
   }
 
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+  const supabase: MiddlewareSupabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll()

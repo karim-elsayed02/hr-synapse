@@ -590,7 +590,7 @@ export default function StaffDirectoryClient({
                               </select>
                             ) : (
                               <span
-                                className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person.role, person.department)}`}
+                                className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person.role)}`}
                               >
                                 {roleLabel(person.role, person.department)}
                               </span>

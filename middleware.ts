@@ -1,6 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
+import type { GoTrueClient } from "@supabase/auth-js"
 // Use a relative import so the Edge bundle resolves on Vercel (path aliases in middleware can fail).
 import { createSupabaseMiddlewareClient } from "./lib/supabase/middleware"
+
+/** Runtime auth client always exposes getUser; some TS versions narrow `auth` to a stub. */
+type GoTrueAuth = InstanceType<typeof GoTrueClient>
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -34,7 +38,9 @@ export async function middleware(request: NextRequest) {
       return response
     }
 
-    const { data, error: authError } = await supabase.auth.getUser()
+    const { data, error: authError } = await (
+      supabase.auth as unknown as GoTrueAuth
+    ).getUser()
 
     if (authError) {
       console.error("[middleware] getUser:", authError.message)
