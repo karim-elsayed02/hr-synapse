@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { isManagerLikeRole } from "@/lib/utils/permissions";
 
 type TaskStatus =
   | "open"
@@ -46,7 +47,7 @@ function asNumber(value: FormDataEntryValue | null, fallback = 0) {
 }
 
 function isAdminOrManager(role: string) {
-  return role === "admin" || role === "manager";
+  return role === "admin" || isManagerLikeRole(role);
 }
 
 function buildTaskIdFormData(taskId: string) {

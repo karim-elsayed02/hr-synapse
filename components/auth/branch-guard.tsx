@@ -1,6 +1,7 @@
 "use client"
 
 import { useAuth } from "@/hooks/use-auth"
+import { isManagerLikeRole } from "@/lib/utils/permissions"
 import type { ReactNode } from "react"
 
 interface BranchGuardProps {
@@ -25,8 +26,8 @@ export function BranchGuard({ children, requiredBranch, fallback }: BranchGuardP
     return <>{children}</>
   }
 
-  // Managers can only see their branch
-  if (profile?.role === "manager" && requiredBranch && profile.branch !== requiredBranch) {
+  // Branch leads / legacy managers: only their branch
+  if (isManagerLikeRole(profile?.role) && requiredBranch && profile.branch !== requiredBranch) {
     return (
       fallback || (
         <div className="text-center p-8">

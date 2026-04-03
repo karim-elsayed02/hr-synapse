@@ -8,11 +8,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { IncidentForm } from "@/components/safeguarding/incident-form"
 import { CaseManagement } from "@/components/safeguarding/case-management"
 import { useAuth } from "@/hooks/use-auth"
+import { isManagerLikeRole } from "@/lib/utils/permissions"
 import { getSafeguardingStatsAction } from "@/lib/actions/safeguarding-actions"
 import { Loader2 } from "lucide-react"
 
 export default function SafeguardingPage() {
-  const { user } = useAuth()
+  const { profile } = useAuth()
   const [showIncidentForm, setShowIncidentForm] = useState(false)
   const [stats, setStats] = useState({
     openCases: 0,
@@ -22,7 +23,8 @@ export default function SafeguardingPage() {
   })
   const [isLoadingStats, setIsLoadingStats] = useState(true)
 
-  const canViewCases = user?.role === "admin" || user?.role === "manager"
+  const canViewCases =
+    profile?.role === "admin" || isManagerLikeRole(profile?.role)
 
   useEffect(() => {
     const loadStats = async () => {

@@ -3,9 +3,11 @@
 import { useAuth } from "@/hooks/use-auth"
 import type { ReactNode } from "react"
 
+type GuardRole = "admin" | "manager" | "staff" | "branch_lead" | "sub_branch_lead"
+
 interface RoleGuardProps {
   children: ReactNode
-  allowedRoles: ("admin" | "manager" | "staff")[]
+  allowedRoles: GuardRole[]
   fallback?: ReactNode
 }
 

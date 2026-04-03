@@ -29,8 +29,10 @@ interface Department {
 
 const SYNAPSEUK_ROLES: UserRole[] = [
   "staff",
-  "manager",
+  "branch_lead",
+  "sub_branch_lead",
   "admin",
+  "manager",
   "Chief Executive Officer",
   "Chief Operating Officer",
   "Chief Financial Officer",

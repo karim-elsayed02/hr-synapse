@@ -1,6 +1,8 @@
 export type UserRole =
   | "admin"
   | "manager"
+  | "branch_lead"
+  | "sub_branch_lead"
   | "staff"
   | "Chief Executive Officer"
   | "Chief Operating Officer"
@@ -34,6 +36,27 @@ export interface User {
   branch?: string
   department?: string
   full_name?: string
+}
+
+/** Role values for staff directory API (matches org RBAC + legacy `manager`). */
+export const STAFF_PROFILE_ROLES = [
+  "staff",
+  "branch_lead",
+  "sub_branch_lead",
+  "admin",
+  "manager",
+] as const
+
+export type StaffProfileRole = (typeof STAFF_PROFILE_ROLES)[number]
+
+export function isStaffProfileRole(role: string): role is StaffProfileRole {
+  return (STAFF_PROFILE_ROLES as readonly string[]).includes(role)
+}
+
+/** Treat legacy `manager` like branch leads for permissions. */
+export function isManagerLikeRole(role: string | null | undefined): boolean {
+  const r = (role ?? "").toLowerCase()
+  return r === "manager" || r === "branch_lead" || r === "sub_branch_lead"
 }
 
 export function isExecutiveTeam(user: User): boolean {
@@ -167,7 +190,7 @@ export function getAccessibleBranches(user: User): string[] {
     return ["London", "Manchester", "Birmingham", "Leeds", "Glasgow"]
   }
 
-  if (user.role === "manager" && user.branch) {
+  if (isManagerLikeRole(user.role) && user.branch) {
     return [user.branch]
   }
 

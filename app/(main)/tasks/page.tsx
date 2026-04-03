@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isManagerLikeRole } from "@/lib/utils/permissions";
 import {
   approveTask,
   assignTaskToUser,
@@ -124,7 +125,7 @@ export default async function TasksPage() {
   const branches = (branchData ?? []) as unknown as BranchRow[];
   const subBranches = (subBranchData ?? []) as unknown as SubBranchRow[];
 
-  const canCreate = profile.role === "admin" || profile.role === "manager";
+  const canCreate = profile.role === "admin" || isManagerLikeRole(profile.role);
   const isAdmin = profile.role === "admin";
 
   let staffForAssign: { id: string; full_name: string | null }[] = [];

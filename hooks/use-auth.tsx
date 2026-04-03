@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isManagerLikeRole } from "@/lib/utils/permissions";
 
 type AuthUser = {
   id: string;
@@ -379,7 +380,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       isAuthenticated: !!user,
       isAdmin: profile?.role === "admin",
-      isManager: profile?.role === "manager",
+      isManager: isManagerLikeRole(profile?.role),
       login,
       logout,
       refreshSession,

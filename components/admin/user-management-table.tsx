@@ -25,8 +25,10 @@ interface User {
 
 const SYNAPSEUK_ROLES: UserRole[] = [
   "staff",
-  "manager",
+  "branch_lead",
+  "sub_branch_lead",
   "admin",
+  "manager",
   "Chief Executive Officer",
   "Chief Operating Officer",
   "Chief Financial Officer",
@@ -223,9 +225,11 @@ export function UserManagementTable() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Roles</SelectItem>
-              <SelectItem value="admin">Admin</SelectItem>
-              <SelectItem value="manager">Manager</SelectItem>
-              <SelectItem value="staff">Staff</SelectItem>
+              <SelectItem value="admin">admin</SelectItem>
+              <SelectItem value="branch_lead">branch_lead</SelectItem>
+              <SelectItem value="sub_branch_lead">sub_branch_lead</SelectItem>
+              <SelectItem value="staff">staff</SelectItem>
+              <SelectItem value="manager">manager</SelectItem>
               <SelectItem value="Chief Executive Officer">CEO</SelectItem>
               <SelectItem value="Chief Operating Officer">COO</SelectItem>
               <SelectItem value="Chief Financial Officer">CFO</SelectItem>

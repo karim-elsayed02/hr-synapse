@@ -6,7 +6,7 @@ import Link from "next/link"
 
 export default function NewStaffPage() {
   return (
-    <RoleGuard allowedRoles={["admin", "manager"]}>
+    <RoleGuard allowedRoles={["admin", "manager", "branch_lead", "sub_branch_lead"]}>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/staff">

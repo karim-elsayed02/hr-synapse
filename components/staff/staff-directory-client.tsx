@@ -3,15 +3,25 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Copy,
   Download,
   Filter,
   MapPin,
   MoreHorizontal,
-  Plus,
   UserPlus,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,22 +80,16 @@ function syntheticStaffId(uuid: string) {
   return `SYN-${(8000 + n).toString().padStart(4, "0")}`;
 }
 
-function statusForUser(id: string): { label: string; dot: string } {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h + id.charCodeAt(i) * (i + 1)) % 997;
-  const r = h % 3;
-  if (r === 0) return { label: "Online", dot: "bg-[#FFB84D]" };
-  if (r === 1) return { label: "Offline", dot: "bg-[#001A3D]/25" };
-  return { label: "In meeting", dot: "bg-red-400" };
-}
-
 function roleBadgeClass(role: string | null) {
   const r = (role ?? "staff").toLowerCase();
   if (r === "admin") {
     return "border border-[#001A3D]/25 bg-[#001A3D]/8 text-[#001A3D]";
   }
-  if (r === "manager") {
+  if (r === "branch_lead" || r === "manager") {
     return "border border-sky-200 bg-sky-50 text-sky-800";
+  }
+  if (r === "sub_branch_lead") {
+    return "border border-violet-200 bg-violet-50 text-violet-900";
   }
   return "border border-sky-100 bg-sky-100/80 text-sky-900";
 }
@@ -94,7 +98,9 @@ function roleLabel(role: string | null, department: string | null) {
   const d = department?.trim();
   if (d) return d.toUpperCase();
   const r = (role ?? "staff").toLowerCase();
-  if (r === "admin") return "LEAD";
+  if (r === "admin") return "ADMIN";
+  if (r === "branch_lead") return "BRANCH LEAD";
+  if (r === "sub_branch_lead") return "SUB BRANCH LEAD";
   if (r === "manager") return "MANAGER";
   return "STAFF";
 }
@@ -136,6 +142,19 @@ function exportStaffCsv(rows: StaffRow[]) {
   URL.revokeObjectURL(url);
 }
 
+const PASSWORD_ALPHABET =
+  "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@%^*";
+
+function generateStaffPassword(length = 16): string {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let s = "";
+  for (let i = 0; i < length; i++) {
+    s += PASSWORD_ALPHABET[bytes[i]! % PASSWORD_ALPHABET.length];
+  }
+  return s;
+}
+
 export default function StaffDirectoryClient({
   initialStaff,
   currentUserRole,
@@ -149,7 +168,8 @@ export default function StaffDirectoryClient({
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [createForm, setCreateForm] = useState<CreateStaffPayload>({
+  const [addStaffOpen, setAddStaffOpen] = useState(false);
+  const [addStaffForm, setAddStaffForm] = useState<CreateStaffPayload>({
     full_name: "",
     email: "",
     role: "staff",
@@ -158,6 +178,14 @@ export default function StaffDirectoryClient({
     phone: "",
     emergency_contact: "",
   });
+  const [addStaffMode, setAddStaffMode] = useState<"invite" | "password">("invite");
+  const [generatedPassword, setGeneratedPassword] = useState("");
+  const [addStaffSuccess, setAddStaffSuccess] = useState<
+    | { kind: "invite"; email: string }
+    | { kind: "password"; email: string; password: string }
+    | null
+  >(null);
+  const [addStaffError, setAddStaffError] = useState<string | null>(null);
 
   const [editForm, setEditForm] = useState<UpdateStaffPayload>({
     id: "",
@@ -252,31 +280,61 @@ export default function StaffDirectoryClient({
     setStaff(data);
   }
 
-  async function handleCreateStaff(e: React.FormEvent) {
+  function resetAddStaffModal() {
+    setAddStaffMode("invite");
+    setAddStaffForm({
+      full_name: "",
+      email: "",
+      role: "staff",
+      branch: "",
+      department: "",
+      phone: "",
+      emergency_contact: "",
+    });
+    setGeneratedPassword(generateStaffPassword());
+    setAddStaffSuccess(null);
+    setAddStaffError(null);
+  }
+
+  async function handleAddStaffSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setAddStaffError(null);
+    const email = addStaffForm.email.trim();
     try {
-      const res = await fetch("/api/staff", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(createForm),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to add staff");
-      await refreshStaff();
-      setCreateForm({
-        full_name: "",
-        email: "",
-        role: "staff",
-        branch: "",
-        department: "",
-        phone: "",
-        emergency_contact: "",
-      });
-      alert("Staff member invited successfully.");
+      if (addStaffMode === "invite") {
+        const res = await fetch("/api/staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(addStaffForm),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to send invite");
+        await refreshStaff();
+        setAddStaffSuccess({ kind: "invite", email });
+      } else {
+        const res = await fetch("/api/staff", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...addStaffForm,
+            password: generatedPassword,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to create staff");
+        await refreshStaff();
+        setAddStaffSuccess({
+          kind: "password",
+          email,
+          password: generatedPassword,
+        });
+      }
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to add staff");
+      setAddStaffError(
+        error instanceof Error ? error.message : "Something went wrong"
+      );
     } finally {
       setLoading(false);
     }
@@ -343,6 +401,280 @@ export default function StaffDirectoryClient({
 
   return (
     <div className="space-y-6">
+      <Dialog
+        open={addStaffOpen}
+        onOpenChange={(open) => {
+          setAddStaffOpen(open);
+          if (open) resetAddStaffModal();
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-[520px] overflow-y-auto rounded-2xl border-[#001A3D]/10 bg-white text-[#001A3D]">
+          {addStaffSuccess ? (
+            <>
+              {addStaffSuccess.kind === "invite" ? (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="font-display text-xl">Invite sent</DialogTitle>
+                    <DialogDescription className="text-[#001A3D]/60">
+                      Supabase emailed{" "}
+                      <span className="font-medium text-[#001A3D]/80">{addStaffSuccess.email}</span>{" "}
+                      a link to accept the invite and set their password.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <p className="rounded-xl border border-[#001A3D]/10 bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D]/75">
+                    Ask them to check spam if nothing arrives. Their profile is already created in the
+                    directory; they can sign in after completing the link.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <DialogHeader>
+                    <DialogTitle className="font-display text-xl">Staff member created</DialogTitle>
+                    <DialogDescription className="text-[#001A3D]/60">
+                      Account login:{" "}
+                      <span className="font-medium text-[#001A3D]/80">{addStaffSuccess.email}</span>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3 rounded-xl border border-[#001A3D]/10 bg-[#f8f9fa] p-4">
+                    <p className="text-xs font-medium uppercase tracking-wider text-[#001A3D]/45">
+                      Temporary password
+                    </p>
+                    <code className="block break-all rounded-lg bg-white px-3 py-2 text-sm font-mono text-[#001A3D]">
+                      {addStaffSuccess.password}
+                    </code>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full border-[#001A3D]/15"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(addStaffSuccess.password);
+                        }}
+                      >
+                        <Copy className="mr-1.5 h-3.5 w-3.5" />
+                        Copy password
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="rounded-xl border border-[#FFB84D]/35 bg-[#FFB84D]/10 px-4 py-3 text-sm text-[#291800]/90">
+                    <span className="font-semibold text-[#001A3D]">Tip:</span> Send this password to{" "}
+                    {addStaffSuccess.email} through a channel you trust (e.g. in person, phone, or your
+                    company chat). Ask them to sign in and change it under Settings or Profile.
+                  </p>
+                </>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  className="rounded-full bg-[#001A3D] text-white hover:bg-[#011b3e]"
+                  onClick={() => {
+                    setAddStaffOpen(false);
+                    resetAddStaffModal();
+                  }}
+                >
+                  Done
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <form onSubmit={handleAddStaffSubmit}>
+              <DialogHeader>
+                <DialogTitle className="font-display text-xl">Add staff member</DialogTitle>
+                <DialogDescription className="text-[#001A3D]/60">
+                  {addStaffMode === "invite"
+                    ? "Supabase sends an invite email with a link to set their password."
+                    : "Create the account now with a temporary password you share yourself."}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-3 flex rounded-xl border border-[#001A3D]/12 bg-[#f8f9fa] p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddStaffMode("invite");
+                    setAddStaffError(null);
+                  }}
+                  className={`flex-1 rounded-lg py-2 text-center text-sm font-semibold transition ${
+                    addStaffMode === "invite"
+                      ? "bg-white text-[#001A3D] shadow-sm"
+                      : "text-[#001A3D]/50 hover:text-[#001A3D]/80"
+                  }`}
+                >
+                  Email invite
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddStaffMode("password");
+                    setAddStaffError(null);
+                    setGeneratedPassword((p) => p || generateStaffPassword());
+                  }}
+                  className={`flex-1 rounded-lg py-2 text-center text-sm font-semibold transition ${
+                    addStaffMode === "password"
+                      ? "bg-white text-[#001A3D] shadow-sm"
+                      : "text-[#001A3D]/50 hover:text-[#001A3D]/80"
+                  }`}
+                >
+                  Temporary password
+                </button>
+              </div>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="add-full-name">Full name</Label>
+                  <Input
+                    id="add-full-name"
+                    value={addStaffForm.full_name}
+                    onChange={(e) =>
+                      setAddStaffForm((p) => ({ ...p, full_name: e.target.value }))
+                    }
+                    required
+                    className="rounded-xl border-[#001A3D]/15"
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add-email">Work email</Label>
+                  <Input
+                    id="add-email"
+                    type="email"
+                    value={addStaffForm.email}
+                    onChange={(e) =>
+                      setAddStaffForm((p) => ({ ...p, email: e.target.value }))
+                    }
+                    required
+                    className="rounded-xl border-[#001A3D]/15"
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add-role">Role</Label>
+                  <select
+                    id="add-role"
+                    value={addStaffForm.role}
+                    onChange={(e) =>
+                      setAddStaffForm((p) => ({ ...p, role: e.target.value }))
+                    }
+                    className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
+                    disabled={loading}
+                  >
+                    <option value="staff">staff</option>
+                    <option value="branch_lead">branch_lead</option>
+                    <option value="sub_branch_lead">sub_branch_lead</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="add-branch">Branch</Label>
+                    <Input
+                      id="add-branch"
+                      value={addStaffForm.branch ?? ""}
+                      onChange={(e) =>
+                        setAddStaffForm((p) => ({ ...p, branch: e.target.value }))
+                      }
+                      className="rounded-xl border-[#001A3D]/15"
+                      disabled={loading}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="add-dept">Department</Label>
+                    <Input
+                      id="add-dept"
+                      value={addStaffForm.department ?? ""}
+                      onChange={(e) =>
+                        setAddStaffForm((p) => ({ ...p, department: e.target.value }))
+                      }
+                      className="rounded-xl border-[#001A3D]/15"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add-phone">Phone</Label>
+                  <Input
+                    id="add-phone"
+                    type="tel"
+                    value={addStaffForm.phone ?? ""}
+                    onChange={(e) =>
+                      setAddStaffForm((p) => ({ ...p, phone: e.target.value }))
+                    }
+                    className="rounded-xl border-[#001A3D]/15"
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add-emergency">Emergency contact</Label>
+                  <Input
+                    id="add-emergency"
+                    value={addStaffForm.emergency_contact ?? ""}
+                    onChange={(e) =>
+                      setAddStaffForm((p) => ({ ...p, emergency_contact: e.target.value }))
+                    }
+                    className="rounded-xl border-[#001A3D]/15"
+                    disabled={loading}
+                  />
+                </div>
+                {addStaffMode === "password" ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Label htmlFor="add-password">Temporary password</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 rounded-full text-xs text-[#001A3D]/70"
+                        disabled={loading}
+                        onClick={() => setGeneratedPassword(generateStaffPassword())}
+                      >
+                        Regenerate
+                      </Button>
+                    </div>
+                    <Input
+                      id="add-password"
+                      readOnly
+                      value={generatedPassword}
+                      className="rounded-xl border-[#001A3D]/15 bg-[#f8f9fa] font-mono text-sm"
+                    />
+                  </div>
+                ) : null}
+                {addStaffError ? (
+                  <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {addStaffError}
+                  </p>
+                ) : null}
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-full border-[#001A3D]/20"
+                  disabled={loading}
+                  onClick={() => setAddStaffOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="rounded-full bg-[#FFB84D] font-semibold text-[#291800] hover:bg-[#f5a84a]"
+                  disabled={
+                    loading ||
+                    (addStaffMode === "password" && !generatedPassword)
+                  }
+                >
+                  {loading
+                    ? addStaffMode === "invite"
+                      ? "Sending…"
+                      : "Creating…"
+                    : addStaffMode === "invite"
+                      ? "Send invite"
+                      : "Create account"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Page header — Digital Curator */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -367,13 +699,17 @@ export default function StaffDirectoryClient({
             Export CSV
           </button>
           {canManageStaff ? (
-            <Link
-              href="/staff/new"
+            <button
+              type="button"
+              onClick={() => {
+                resetAddStaffModal();
+                setAddStaffOpen(true);
+              }}
               className="inline-flex h-11 items-center gap-2 rounded-[var(--curator-radius-xl)] bg-[#FFB84D] px-5 text-sm font-semibold text-[#291800] shadow-[var(--curator-shadow)] transition hover:bg-[#f5a84a]"
             >
               <UserPlus className="h-4 w-4" strokeWidth={2} />
               Add staff
-            </Link>
+            </button>
           ) : null}
         </div>
       </div>
@@ -427,86 +763,15 @@ export default function StaffDirectoryClient({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All roles</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="staff">Staff</SelectItem>
+                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="branch_lead">branch_lead</SelectItem>
+                  <SelectItem value="sub_branch_lead">sub_branch_lead</SelectItem>
+                  <SelectItem value="staff">staff</SelectItem>
+                  <SelectItem value="manager">manager (legacy)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
-
-          {/* Admin inline invite — compact, below filters */}
-          {canManageStaff ? (
-            <details className="group curator-card overflow-hidden shadow-[var(--curator-shadow)]">
-              <summary className="cursor-pointer list-none px-6 py-4 font-display text-sm font-semibold text-[#001A3D] transition hover:bg-[#f8f9fa] [&::-webkit-details-marker]:hidden">
-                <span className="inline-flex items-center gap-2">
-                  <Plus className="h-4 w-4 text-[#FFB84D]" strokeWidth={2} />
-                  Invite staff by email
-                  <span className="text-xs font-normal text-[#001A3D]/45">(optional)</span>
-                </span>
-              </summary>
-              <div className="border-t border-[#001A3D]/[0.06] px-6 pb-6 pt-2">
-                <form onSubmit={handleCreateStaff} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <input
-                    type="text"
-                    placeholder="Full name"
-                    value={createForm.full_name}
-                    onChange={(e) =>
-                      setCreateForm((prev) => ({ ...prev, full_name: e.target.value }))
-                    }
-                    className="h-11 rounded-2xl bg-[#f3f4f5] px-4 text-sm text-[#001A3D] outline-none focus:bg-white focus:ring-2 focus:ring-[#FFB84D]/40"
-                    required
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    value={createForm.email}
-                    onChange={(e) =>
-                      setCreateForm((prev) => ({ ...prev, email: e.target.value }))
-                    }
-                    className="h-11 rounded-2xl bg-[#f3f4f5] px-4 text-sm text-[#001A3D] outline-none focus:bg-white focus:ring-2 focus:ring-[#FFB84D]/40"
-                    required
-                  />
-                  <select
-                    value={createForm.role}
-                    onChange={(e) =>
-                      setCreateForm((prev) => ({ ...prev, role: e.target.value }))
-                    }
-                    className="h-11 rounded-2xl border-0 bg-[#f3f4f5] px-4 text-sm text-[#001A3D]"
-                  >
-                    <option value="staff">Staff</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="h-11 rounded-[var(--curator-radius-xl)] bg-[#001A3D] text-sm font-semibold text-white transition hover:bg-[#011b3e] disabled:opacity-60"
-                  >
-                    {loading ? "Sending…" : "Send invite"}
-                  </button>
-                  <input
-                    type="text"
-                    placeholder="Branch"
-                    value={createForm.branch}
-                    onChange={(e) =>
-                      setCreateForm((prev) => ({ ...prev, branch: e.target.value }))
-                    }
-                    className="h-11 rounded-2xl bg-[#f3f4f5] px-4 text-sm text-[#001A3D] md:col-span-2"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Department"
-                    value={createForm.department}
-                    onChange={(e) =>
-                      setCreateForm((prev) => ({ ...prev, department: e.target.value }))
-                    }
-                    className="h-11 rounded-2xl bg-[#f3f4f5] px-4 text-sm text-[#001A3D] md:col-span-2"
-                  />
-                </form>
-              </div>
-            </details>
-          ) : null}
 
           {/* Table */}
           <div className="curator-card overflow-hidden shadow-[var(--curator-shadow)]">
@@ -518,7 +783,6 @@ export default function StaffDirectoryClient({
                     <th className="px-4 py-4">Role</th>
                     <th className="px-4 py-4">Branch</th>
                     <th className="min-w-[180px] px-4 py-4">Contact details</th>
-                    <th className="px-4 py-4">Status</th>
                     {canManageStaff ? <th className="w-12 px-4 py-4" /> : null}
                   </tr>
                 </thead>
@@ -526,7 +790,7 @@ export default function StaffDirectoryClient({
                   {paginatedStaff.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canManageStaff ? 6 : 5}
+                        colSpan={canManageStaff ? 5 : 4}
                         className="px-6 py-16 text-center text-sm text-[#001A3D]/50"
                       >
                         No staff match your filters.
@@ -535,7 +799,6 @@ export default function StaffDirectoryClient({
                   ) : (
                     paginatedStaff.map((person) => {
                       const isEditing = editingId === person.id;
-                      const st = statusForUser(person.id);
                       const syn = syntheticStaffId(person.id);
 
                       return (
@@ -584,9 +847,11 @@ export default function StaffDirectoryClient({
                                 }
                                 className="h-10 rounded-xl border-0 bg-[#f3f4f5] px-2 text-sm"
                               >
-                                <option value="staff">Staff</option>
-                                <option value="manager">Manager</option>
-                                <option value="admin">Admin</option>
+                                <option value="staff">staff</option>
+                                <option value="branch_lead">branch_lead</option>
+                                <option value="sub_branch_lead">sub_branch_lead</option>
+                                <option value="admin">admin</option>
+                                <option value="manager">manager (legacy)</option>
                               </select>
                             ) : (
                               <span
@@ -632,12 +897,6 @@ export default function StaffDirectoryClient({
                                 <p className="text-xs text-[#001A3D]/50">{person.phone || "—"}</p>
                               </div>
                             )}
-                          </td>
-                          <td className="px-4 py-4 align-middle">
-                            <span className="inline-flex items-center gap-2 text-sm text-[#001A3D]/80">
-                              <span className={`h-2 w-2 rounded-full ${st.dot}`} />
-                              {st.label}
-                            </span>
                           </td>
                           {canManageStaff ? (
                             <td className="px-4 py-4 align-middle text-right">
@@ -779,46 +1038,6 @@ export default function StaffDirectoryClient({
                 </p>
               </div>
             </div>
-          </div>
-
-          <div className="curator-card p-6 shadow-[var(--curator-shadow)]">
-            <p className="font-display text-sm font-semibold text-[#001A3D]">System status</p>
-            <ul className="mt-4 space-y-4">
-              <li className="flex gap-3">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 text-xs">
-                  ✓
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-[#001A3D]">Database sync</p>
-                  <p className="text-xs text-[#001A3D]/45">Last synced: moments ago</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#FFB84D]/25 text-[#291800] text-xs">
-                  ✓
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-[#001A3D]">Directory API</p>
-                  <p className="text-xs text-[#001A3D]/45">Status: operational</p>
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 text-xs">
-                  ◷
-                </span>
-                <div>
-                  <p className="text-sm font-medium text-[#001A3D]">Security & sessions</p>
-                  <p className="text-xs text-[#001A3D]/45">Managed via secure session</p>
-                </div>
-              </li>
-            </ul>
-            <Button
-              variant="outline"
-              className="mt-6 w-full rounded-[var(--curator-radius-xl)] border-[#001A3D]/15 text-[#001A3D] hover:bg-[#f8f9fa]"
-              asChild
-            >
-              <Link href="/settings">View settings</Link>
-            </Button>
           </div>
 
           <div className="curator-card overflow-hidden p-0 shadow-[var(--curator-shadow)]">

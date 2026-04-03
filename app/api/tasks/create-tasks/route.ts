@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { revalidatePath } from "next/cache"
 import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
+import { isManagerLikeRole } from "@/lib/utils/permissions"
 
 export const dynamic = "force-dynamic"
 
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 })
   }
 
-  if (profile.role !== "admin" && profile.role !== "manager") {
+  if (profile.role !== "admin" && !isManagerLikeRole(profile.role)) {
     return NextResponse.json({ error: "Only admins or managers can create tasks" }, { status: 403 })
   }
 

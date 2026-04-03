@@ -6,7 +6,14 @@ import { NextResponse, type NextRequest } from "next/server";
  * The cookie name follows the pattern: sb-<project-ref>-auth-token
  */
 
-const PUBLIC = new Set(["/", "/login", "/register", "/forgot-password", "/reset-password"]);
+const PUBLIC = new Set([
+  "/",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/set-password",
+]);
 
 function isPublic(p: string) {
   return (
