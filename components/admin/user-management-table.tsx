@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Edit, Trash2, Search, Users, AlertCircle } from "lucide-react"
-import type { UserRole } from "@/lib/utils/permissions"
+import { STAFF_PROFILE_ROLES, type StaffProfileRole } from "@/lib/utils/permissions"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
@@ -16,44 +16,14 @@ interface User {
   id: string
   email: string
   full_name: string
-  role: UserRole
+  role: StaffProfileRole
   branch?: string
   department?: string
   phone?: string
   created_at: string
 }
 
-const SYNAPSEUK_ROLES: UserRole[] = [
-  "staff",
-  "branch_lead",
-  "sub_branch_lead",
-  "admin",
-  "manager",
-  "Chief Executive Officer",
-  "Chief Operating Officer",
-  "Chief Financial Officer",
-  "Tutoring Lead",
-  "Medical Lead",
-  "Dental Lead",
-  "Medical Admissions Lead",
-  "Dental Admissions Lead",
-  "Oxbridge Admissions Lead",
-  "Medical Work Experience Lead",
-  "Dental Work Experience Lead",
-  "Tutor",
-  "Dental Admissions Mentor",
-  "Medical Admissions Mentor",
-  "Dental Work Experience Mentor",
-  "Medical Work Experience Mentor",
-  "Ambassador",
-  "Medical Education Lead",
-  "Dental Education Lead",
-  "Medical Events Lead",
-  "Dental Events Lead",
-  "Events Curriculum Lead",
-  "Events Representative",
-  "Events Outreach Officer",
-]
+const SYNAPSEUK_ROLES = STAFF_PROFILE_ROLES
 
 export function UserManagementTable() {
   const [users, setUsers] = useState<User[]>([])
@@ -110,7 +80,7 @@ export function UserManagementTable() {
     setUpdatingRoles((prev) => new Set(prev).add(userId))
 
     setUsers((prevUsers) =>
-      prevUsers.map((user) => (user.id === userId ? { ...user, role: newRole as UserRole } : user)),
+      prevUsers.map((user) => (user.id === userId ? { ...user, role: newRole as StaffProfileRole } : user)),
     )
 
     try {
@@ -225,17 +195,11 @@ export function UserManagementTable() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Roles</SelectItem>
-              <SelectItem value="admin">admin</SelectItem>
-              <SelectItem value="branch_lead">branch_lead</SelectItem>
-              <SelectItem value="sub_branch_lead">sub_branch_lead</SelectItem>
-              <SelectItem value="staff">staff</SelectItem>
-              <SelectItem value="manager">manager</SelectItem>
-              <SelectItem value="Chief Executive Officer">CEO</SelectItem>
-              <SelectItem value="Chief Operating Officer">COO</SelectItem>
-              <SelectItem value="Chief Financial Officer">CFO</SelectItem>
-              <SelectItem value="Medical Lead">Medical Lead</SelectItem>
-              <SelectItem value="Dental Lead">Dental Lead</SelectItem>
-              <SelectItem value="Tutoring Lead">Tutoring Lead</SelectItem>
+              {SYNAPSEUK_ROLES.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {r}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={branchFilter} onValueChange={setBranchFilter}>

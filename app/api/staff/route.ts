@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
 
     const full_name = String(body.full_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
-    const newRole = String(body.role ?? "staff").trim().toLowerCase();
+    const newRole = String(body.role ?? "staff").trim();
     const branch = String(body.branch ?? "").trim() || null;
     const department = String(body.department ?? "").trim() || null;
     const phone = String(body.phone ?? "").trim() || null;
@@ -196,7 +196,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const full_name = String(body.full_name ?? "").trim();
-    const newRole = String(body.role ?? "staff").trim().toLowerCase();
+    const newRole = String(body.role ?? "staff").trim();
 
     if (!full_name) {
       return NextResponse.json({ error: "Full name is required" }, { status: 400 });
@@ -322,7 +322,7 @@ export async function PUT(request: NextRequest) {
 
     const full_name = String(body.full_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
-    const newRole = String(body.role ?? "staff").trim().toLowerCase();
+    const newRole = String(body.role ?? "staff").trim();
     const branch = String(body.branch ?? "").trim() || null;
     const department = String(body.department ?? "").trim() || null;
     const phone = String(body.phone ?? "").trim() || null;

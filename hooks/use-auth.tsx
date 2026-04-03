@@ -45,7 +45,7 @@ type AuthContextValue = {
   isAdmin: boolean;
   isManager: boolean;
   login: (input: LoginInput) => Promise<{ success: boolean; error?: string }>;
-  logout: () => Promise<void>;
+  logout: () => void;
   refreshSession: () => Promise<void>;
   updateProfile: (
     updates: UpdateProfileInput
@@ -304,19 +304,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [router]
   );
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(() => {
+    setUser(null);
+    setProfile(null);
+    document.cookie.split(";").forEach((c) => {
+      const name = c.trim().split("=")[0];
+      if (name.startsWith("sb-")) {
+        document.cookie = `${name}=;expires=Thu,01 Jan 1970 00:00:00 UTC;path=/`;
+      }
+    });
     try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error("Logout error:", error);
-    } finally {
-      setUser(null);
-      setProfile(null);
-      router.replace("/login");
-      router.refresh();
-    }
-  }, [router]);
+      createClient().auth.signOut().catch(() => {});
+    } catch { /* ignore */ }
+    window.location.href = "/login";
+  }, []);
 
   const updateProfile = useCallback(
     async (updates: UpdateProfileInput) => {

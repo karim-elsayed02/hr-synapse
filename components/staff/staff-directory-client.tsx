@@ -35,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { STAFF_PROFILE_ROLES } from "@/lib/utils/permissions";
 import type { StaffRow } from "@/app/(main)/staff/page";
 
 type Props = {
@@ -81,27 +82,21 @@ function syntheticStaffId(uuid: string) {
 }
 
 function roleBadgeClass(role: string | null) {
-  const r = (role ?? "staff").toLowerCase();
-  if (r === "admin") {
+  const r = role ?? "staff";
+  if (r === "admin")
     return "border border-[#001A3D]/25 bg-[#001A3D]/8 text-[#001A3D]";
-  }
-  if (r === "branch_lead" || r === "manager") {
+  if (r === "branch_lead")
     return "border border-sky-200 bg-sky-50 text-sky-800";
-  }
-  if (r === "sub_branch_lead") {
+  if (r === "sub_branch_lead")
     return "border border-violet-200 bg-violet-50 text-violet-900";
-  }
   return "border border-sky-100 bg-sky-100/80 text-sky-900";
 }
 
-function roleLabel(role: string | null, department: string | null) {
-  const d = department?.trim();
-  if (d) return d.toUpperCase();
-  const r = (role ?? "staff").toLowerCase();
+function roleLabel(role: string | null) {
+  const r = role ?? "staff";
   if (r === "admin") return "ADMIN";
   if (r === "branch_lead") return "BRANCH LEAD";
   if (r === "sub_branch_lead") return "SUB BRANCH LEAD";
-  if (r === "manager") return "MANAGER";
   return "STAFF";
 }
 
@@ -223,7 +218,7 @@ export default function StaffDirectoryClient({
         locationFilter === "all" || (person.branch ?? "").trim() === locationFilter;
 
       const matchesRole =
-        roleFilter === "all" || (person.role ?? "staff").toLowerCase() === roleFilter;
+        roleFilter === "all" || (person.role ?? "staff") === roleFilter;
 
       return matchesQuery && matchesLocation && matchesRole;
     });
@@ -557,10 +552,11 @@ export default function StaffDirectoryClient({
                     className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                     disabled={loading}
                   >
-                    <option value="staff">staff</option>
-                    <option value="branch_lead">branch_lead</option>
-                    <option value="sub_branch_lead">sub_branch_lead</option>
-                    <option value="admin">admin</option>
+                    {STAFF_PROFILE_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -763,11 +759,11 @@ export default function StaffDirectoryClient({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All roles</SelectItem>
-                  <SelectItem value="admin">admin</SelectItem>
-                  <SelectItem value="branch_lead">branch_lead</SelectItem>
-                  <SelectItem value="sub_branch_lead">sub_branch_lead</SelectItem>
-                  <SelectItem value="staff">staff</SelectItem>
-                  <SelectItem value="manager">manager (legacy)</SelectItem>
+                  {STAFF_PROFILE_ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -847,17 +843,17 @@ export default function StaffDirectoryClient({
                                 }
                                 className="h-10 rounded-xl border-0 bg-[#f3f4f5] px-2 text-sm"
                               >
-                                <option value="staff">staff</option>
-                                <option value="branch_lead">branch_lead</option>
-                                <option value="sub_branch_lead">sub_branch_lead</option>
-                                <option value="admin">admin</option>
-                                <option value="manager">manager (legacy)</option>
+                                {STAFF_PROFILE_ROLES.map((r) => (
+                                  <option key={r} value={r}>
+                                    {r}
+                                  </option>
+                                ))}
                               </select>
                             ) : (
                               <span
                                 className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person.role)}`}
                               >
-                                {roleLabel(person.role, person.department)}
+                                {roleLabel(person.role)}
                               </span>
                             )}
                           </td>

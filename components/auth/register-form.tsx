@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
-import type { UserRole } from "@/lib/utils/permissions"
+import { STAFF_PROFILE_ROLES } from "@/lib/utils/permissions"
 
 interface RegisterFormProps {
   isAdminCreating?: boolean
@@ -27,37 +27,7 @@ interface Department {
   description?: string
 }
 
-const SYNAPSEUK_ROLES: UserRole[] = [
-  "staff",
-  "branch_lead",
-  "sub_branch_lead",
-  "admin",
-  "manager",
-  "Chief Executive Officer",
-  "Chief Operating Officer",
-  "Chief Financial Officer",
-  "Tutoring Lead",
-  "Medical Lead",
-  "Dental Lead",
-  "Medical Admissions Lead",
-  "Dental Admissions Lead",
-  "Oxbridge Admissions Lead",
-  "Medical Work Experience Lead",
-  "Dental Work Experience Lead",
-  "Tutor",
-  "Dental Admissions Mentor",
-  "Medical Admissions Mentor",
-  "Dental Work Experience Mentor",
-  "Medical Work Experience Mentor",
-  "Ambassador",
-  "Medical Education Lead",
-  "Dental Education Lead",
-  "Medical Events Lead",
-  "Dental Events Lead",
-  "Events Curriculum Lead",
-  "Events Representative",
-  "Events Outreach Officer",
-]
+const SYNAPSEUK_ROLES = STAFF_PROFILE_ROLES
 
 export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
   const [isLoading, setIsLoading] = useState(false)
