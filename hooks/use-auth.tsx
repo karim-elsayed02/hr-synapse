@@ -57,11 +57,18 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 async function loadProfile(userId: string): Promise<AuthProfile | null> {
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, email, full_name, role, branch, department, phone, emergency_contact")
-    .eq("id", userId)
-    .maybeSingle();
+  const result = await Promise.race([
+    supabase
+      .from("profiles")
+      .select("id, email, full_name, role, branch, department, phone, emergency_contact")
+      .eq("id", userId)
+      .maybeSingle(),
+    new Promise<{ data: null; error: { message: string } }>((resolve) =>
+      setTimeout(() => resolve({ data: null, error: { message: "Profile load timed out" } }), 5000)
+    ),
+  ]);
+
+  const { data, error } = result;
 
   if (error) {
     console.error("Failed to load profile:", error);
@@ -174,16 +181,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id: session.user.id,
           email: session.user.email ?? null,
         });
-        setProfile(fallbackProfile);
-        // Session is ready — do not block UI on profiles row fetch (can hang under RLS/network).
-        if (mounted) setLoading(false);
 
         try {
           const nextProfile = await loadProfile(session.user.id);
           if (!mounted) return;
           setProfile(nextProfile ?? fallbackProfile);
         } catch (profileErr) {
-          console.error("Auth bootstrap: profile fetch failed (session still valid):", profileErr);
+          console.error("Auth bootstrap: profile fetch failed:", profileErr);
+          if (mounted) setProfile(fallbackProfile);
         }
       } catch (error) {
         console.error("Auth bootstrap error:", error);
@@ -229,15 +234,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: session.user.id,
         email: session.user.email ?? null,
       });
-      setProfile(fallbackProfile);
-      setLoading(false);
 
       try {
         const nextProfile = await loadProfile(session.user.id);
-        if (!mounted) return;
-        setProfile(nextProfile ?? fallbackProfile);
-      } catch (profileErr) {
-        console.error("onAuthStateChange: profile fetch failed:", profileErr);
+        setProfile(mounted ? (nextProfile ?? fallbackProfile) : fallbackProfile);
+      } catch {
+        if (mounted) setProfile(fallbackProfile);
+      } finally {
+        if (mounted) setLoading(false);
       }
     });
 
