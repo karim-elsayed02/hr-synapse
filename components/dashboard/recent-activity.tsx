@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 interface Activity {
   id: string
-  type: "request" | "task" | "announcement" | "safeguarding" | "document"
+  type: "request" | "task" | "announcement" | "document"
   title: string
   user: string
   timestamp: string

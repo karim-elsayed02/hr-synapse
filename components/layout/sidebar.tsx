@@ -16,7 +16,6 @@ import {
   Wallet,
   FileText,
   Megaphone,
-  Shield,
   UserCog,
   Settings,
   Plus,
@@ -42,7 +41,6 @@ const navigation: NavItem[] = [
   { name: "Payroll", href: "/payroll", icon: Wallet, allowedFor: ["executive", "branchLead"] },
   { name: "Documents", href: "/documents", icon: FileText, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Announcements", href: "/announcements", icon: Megaphone, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
-  { name: "Safeguarding", href: "/safeguarding", icon: Shield, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "User Management", href: "/admin/users", icon: UserCog, allowedFor: ["executive"] },
   { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["executive"] },
 ]

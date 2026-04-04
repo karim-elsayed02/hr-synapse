@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
-import { Plus, FileText, Users, AlertTriangle, Megaphone } from "lucide-react"
+import { Plus, FileText, Users, Megaphone } from "lucide-react"
 import Link from "next/link"
 
 export function QuickActions() {
@@ -36,13 +36,6 @@ export function QuickActions() {
       icon: Megaphone,
       href: "/announcements/new",
       roles: ["admin", "manager"],
-    },
-    {
-      title: "Safeguarding report",
-      description: "Confidential urgent reporting",
-      icon: AlertTriangle,
-      href: "/safeguarding/report",
-      roles: ["admin", "manager", "staff"],
     },
   ]
 

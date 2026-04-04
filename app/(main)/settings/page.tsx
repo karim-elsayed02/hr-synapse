@@ -32,7 +32,6 @@ interface SecuritySettings {
 
 interface NotificationSettings {
   emailNotifications: boolean
-  safeguardingAlerts: boolean
   adminEmail: string
 }
 
@@ -61,7 +60,6 @@ export default function SettingsPage() {
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
     emailNotifications: true,
-    safeguardingAlerts: true,
     adminEmail: "admin@synapseuk.org",
   })
 
@@ -333,18 +331,6 @@ export default function SettingsPage() {
                 checked={notificationSettings.emailNotifications}
                 onCheckedChange={(checked) =>
                   setNotificationSettings((prev) => ({ ...prev, emailNotifications: checked }))
-                }
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Safeguarding Alerts</Label>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Immediate alerts for safeguarding incidents</p>
-              </div>
-              <Switch
-                checked={notificationSettings.safeguardingAlerts}
-                onCheckedChange={(checked) =>
-                  setNotificationSettings((prev) => ({ ...prev, safeguardingAlerts: checked }))
                 }
               />
             </div>

@@ -33,7 +33,6 @@ const pageNames: Record<string, string> = {
   "/tasks": "Task Board",
   "/documents": "Documents",
   "/announcements": "Announcements",
-  "/safeguarding": "Safeguarding",
   "/admin/users": "User Management",
   "/admin/users/create": "Create User",
   "/settings": "Settings",

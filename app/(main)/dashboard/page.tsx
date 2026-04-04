@@ -12,7 +12,7 @@ import { Sparkles, Activity } from "lucide-react";
 
 type ActivityItem = {
   id: string;
-  type: "request" | "task" | "announcement" | "safeguarding" | "document";
+  type: "request" | "task" | "announcement" | "document";
   title: string;
   user: string;
   timestamp: string;

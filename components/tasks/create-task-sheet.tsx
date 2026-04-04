@@ -127,7 +127,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                 name="title"
                 required
                 className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] placeholder:text-[#001A3D]/35 focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
-                placeholder="e.g. Review safeguarding policy draft"
+                placeholder="e.g. Review compliance checklist"
               />
             </div>
 
