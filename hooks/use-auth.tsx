@@ -147,7 +147,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let bootstrapDone = false;
+    let currentUserId: string | null = null;
     const supabase = createClient();
+
+    const makeFallback = (u: { id: string; email?: string | null }): AuthProfile => ({
+      id: u.id,
+      email: u.email ?? null,
+      full_name: null,
+      role: "staff",
+      branch: null,
+      department: null,
+      phone: null,
+      emergency_contact: null,
+      branch_id: null,
+      profile_picture: null,
+    });
 
     const bootstrap = async () => {
       try {
@@ -164,18 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const fallbackProfile = {
-          id: session.user.id,
-          email: session.user.email ?? null,
-          full_name: null,
-          role: "staff",
-          branch: null,
-          department: null,
-          phone: null,
-          emergency_contact: null,
-          branch_id: null,
-          profile_picture: null,
-        };
+        currentUserId = session.user.id;
 
         setUser({
           id: session.user.id,
@@ -185,10 +189,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const nextProfile = await loadProfile(session.user.id);
           if (!mounted) return;
-          setProfile(nextProfile ?? fallbackProfile);
+          setProfile(nextProfile ?? makeFallback(session.user));
         } catch (profileErr) {
           console.error("Auth bootstrap: profile fetch failed:", profileErr);
-          if (mounted) setProfile(fallbackProfile);
+          if (mounted) setProfile(makeFallback(session.user));
         }
       } catch (error) {
         console.error("Auth bootstrap error:", error);
@@ -199,6 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } finally {
         if (mounted) {
           setLoading(false);
+          bootstrapDone = true;
         }
       }
     };
@@ -207,28 +212,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
+      if (event === "INITIAL_SESSION") return;
+
+      if (event === "TOKEN_REFRESHED" && session?.user?.id === currentUserId) return;
+
       if (!session?.user) {
+        currentUserId = null;
         setUser(null);
         setProfile(null);
         setLoading(false);
         return;
       }
 
-      const fallbackProfile = {
-        id: session.user.id,
-        email: session.user.email ?? null,
-        full_name: null,
-        role: "staff",
-        branch: null,
-        department: null,
-        phone: null,
-        emergency_contact: null,
-        branch_id: null,
-        profile_picture: null,
-      };
+      if (session.user.id === currentUserId && bootstrapDone) return;
+
+      currentUserId = session.user.id;
 
       setUser({
         id: session.user.id,
@@ -237,9 +238,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const nextProfile = await loadProfile(session.user.id);
-        setProfile(mounted ? (nextProfile ?? fallbackProfile) : fallbackProfile);
+        if (mounted) setProfile(nextProfile ?? makeFallback(session.user));
       } catch {
-        if (mounted) setProfile(fallbackProfile);
+        if (mounted) setProfile(makeFallback(session.user));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -268,32 +269,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
         }
 
-        const fallbackProfile = {
-          id: data.user.id,
-          email: data.user.email ?? null,
-          full_name: null,
-          role: "staff",
-          branch: null,
-          department: null,
-          phone: null,
-          emergency_contact: null,
-          branch_id: null,
-          profile_picture: null,
-        };
-
         setUser({
           id: data.user.id,
           email: data.user.email ?? null,
         });
-        setProfile(fallbackProfile);
-        setLoading(false);
 
-        try {
-          const nextProfile = await loadProfile(data.user.id);
-          setProfile(nextProfile ?? fallbackProfile);
-        } catch (profileErr) {
-          console.error("Login: profile fetch failed:", profileErr);
-        }
+        const nextProfile = await loadProfile(data.user.id);
+        setProfile(
+          nextProfile ?? {
+            id: data.user.id,
+            email: data.user.email ?? null,
+            full_name: null,
+            role: "staff",
+            branch: null,
+            department: null,
+            phone: null,
+            emergency_contact: null,
+            branch_id: null,
+            profile_picture: null,
+          }
+        );
+        setLoading(false);
 
         router.refresh();
 

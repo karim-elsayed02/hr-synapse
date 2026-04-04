@@ -46,7 +46,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (authed && PUBLIC.has(pathname)) {
+  const NO_REDIRECT_WHEN_AUTHED = new Set(["/reset-password", "/set-password"]);
+  if (authed && PUBLIC.has(pathname) && !NO_REDIRECT_WHEN_AUTHED.has(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);
