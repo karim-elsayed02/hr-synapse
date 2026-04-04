@@ -18,7 +18,6 @@ import {
   Megaphone,
   Shield,
   UserCog,
-  Building2,
   Settings,
   Plus,
   LogOut,
@@ -45,7 +44,6 @@ const navigation: NavItem[] = [
   { name: "Announcements", href: "/announcements", icon: Megaphone, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Safeguarding", href: "/safeguarding", icon: Shield, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "User Management", href: "/admin/users", icon: UserCog, allowedFor: ["executive"] },
-  { name: "Branch Management", href: "/admin/branches", icon: Building2, allowedFor: ["executive"] },
   { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["executive"] },
 ]
 

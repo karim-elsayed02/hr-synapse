@@ -55,9 +55,6 @@ export default async function AdminUsersPage() {
           <Link href="/staff" className="rounded-lg border px-4 py-2 text-sm font-medium">
             Staff directory
           </Link>
-          <Link href="/admin/branches" className="rounded-lg border px-4 py-2 text-sm font-medium">
-            Branches
-          </Link>
         </div>
       </div>
 
