@@ -94,8 +94,8 @@ export async function getTasksAction() {
 export async function createTaskAction(input: FormData | Record<string, unknown>) {
   const { supabase, user, profile } = await requireUser();
 
-  if (!isAdminOrManager(profile.role)) {
-    throw new Error("Only admins or managers can create tasks");
+  if (profile.role !== "admin" && profile.role !== "branch_lead") {
+    throw new Error("Only admins and branch leads can create tasks");
   }
 
   const isFormData = input instanceof FormData;

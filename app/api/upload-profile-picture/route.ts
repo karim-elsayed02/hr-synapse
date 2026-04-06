@@ -1,4 +1,3 @@
-import { put } from "@vercel/blob";
 import { type NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -7,15 +6,14 @@ export const dynamic = "force-dynamic";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-function getExtension(file: File) {
-  const mimeToExt: Record<string, string> = {
+function getExtension(mimeType: string) {
+  const map: Record<string, string> = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
     "image/gif": "gif",
   };
-
-  return mimeToExt[file.type] || "jpg";
+  return map[mimeType] || "jpg";
 }
 
 export async function POST(request: NextRequest) {
@@ -47,26 +45,42 @@ export async function POST(request: NextRequest) {
 
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: "File size must be less than 5MB" },
+        { error: "File size must be less than 5 MB" },
         { status: 400 }
       );
     }
 
-    const extension = getExtension(file);
-    const filename = `profile-pictures/${user.id}.${extension}`;
+    const ext = getExtension(file.type);
+    const avatarPath = `${user.id}/avatar.${ext}`;
 
-    const blob = await put(filename, file, {
-      access: "public",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(avatarPath, buffer, {
+        contentType: file.type,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("Supabase storage upload error:", uploadError);
+      return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    }
+
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ avatar_path: avatarPath, updated_at: new Date().toISOString() })
+      .eq("id", user.id);
+
+    if (updateError) {
+      console.error("Profile avatar_path update error:", updateError);
+      return NextResponse.json({ error: "Upload succeeded but profile update failed" }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
-      url: blob.url,
-      pathname: blob.pathname,
-      contentType: file.type,
-      size: file.size,
+      avatar_path: avatarPath,
     });
   } catch (error) {
     console.error("Profile picture upload error:", error);

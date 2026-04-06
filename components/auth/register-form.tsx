@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,19 +12,15 @@ import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { STAFF_PROFILE_ROLES } from "@/lib/utils/permissions"
+import {
+  BRANCH_SLUGS,
+  SUB_BRANCH_SLUGS,
+  BRANCH_LABELS,
+  SUB_BRANCH_LABELS,
+} from "@/lib/utils/org-structure"
 
 interface RegisterFormProps {
   isAdminCreating?: boolean
-}
-
-interface Department {
-  id: number
-  name: string
-  parent_id: number | null
-  parent_name: string | null
-  branch_type: "main_branch" | "sub_department"
-  full_path: string
-  description?: string
 }
 
 const SYNAPSEUK_ROLES = STAFF_PROFILE_ROLES
@@ -32,29 +28,10 @@ const SYNAPSEUK_ROLES = STAFF_PROFILE_ROLES
 export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [departments, setDepartments] = useState<Department[]>([])
   const [selectedBranch, setSelectedBranch] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState("")
   const { user, profile } = useAuth()
   const { toast } = useToast()
-
-  useEffect(() => {
-    if (isAdminCreating) {
-      loadDepartments()
-    }
-  }, [isAdminCreating])
-
-  const loadDepartments = async () => {
-    try {
-      const response = await fetch("/api/departments")
-      if (response.ok) {
-        const data = await response.json()
-        setDepartments(data)
-      }
-    } catch (error) {
-      console.error("Error loading departments:", error)
-    }
-  }
 
   if (isAdminCreating && (!user || !profile || profile.role !== "admin")) {
     return (
@@ -66,19 +43,16 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
     )
   }
 
-  const mainBranches = departments.filter((d) => d.branch_type === "main_branch")
-  const availableDepartments = selectedBranch
-    ? departments.filter((d) => d.parent_id && d.parent_name === selectedBranch)
-    : []
-
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsLoading(true)
     setError(null)
 
     const formData = new FormData(event.currentTarget)
-    if (selectedBranch) formData.set("branch", selectedBranch)
-    if (selectedDepartment) formData.set("department", selectedDepartment)
+    if (isAdminCreating) {
+      if (selectedBranch) formData.set("branch", selectedBranch)
+      if (selectedDepartment) formData.set("department", selectedDepartment)
+    }
 
     const email = formData.get("email") as string
     const password = formData.get("password") as string
@@ -197,7 +171,7 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                   value={selectedBranch}
                   onValueChange={(value) => {
                     setSelectedBranch(value)
-                    setSelectedDepartment("") // Reset department when branch changes
+                    setSelectedDepartment("")
                   }}
                   required
                 >
@@ -205,9 +179,9 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                     <SelectValue placeholder="Select a branch" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mainBranches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.name}>
-                        {branch.name}
+                    {BRANCH_SLUGS.map((slug) => (
+                      <SelectItem key={slug} value={slug}>
+                        {BRANCH_LABELS[slug]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -215,20 +189,19 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="department">Department</Label>
+                <Label htmlFor="department">Sub-branch</Label>
                 <Select
                   value={selectedDepartment}
                   onValueChange={setSelectedDepartment}
-                  disabled={!selectedBranch}
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a department" />
+                    <SelectValue placeholder="Select a sub-branch" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableDepartments.map((dept) => (
-                      <SelectItem key={dept.id} value={dept.name}>
-                        {dept.name}
+                    {SUB_BRANCH_SLUGS.map((slug) => (
+                      <SelectItem key={slug} value={slug}>
+                        {SUB_BRANCH_LABELS[slug]}
                       </SelectItem>
                     ))}
                   </SelectContent>

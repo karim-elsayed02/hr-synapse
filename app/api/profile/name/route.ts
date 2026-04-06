@@ -7,7 +7,7 @@ type ProfileUpdatePayload = {
   full_name?: string | null;
   phone?: string | null;
   emergency_contact?: string | null;
-  profile_picture?: string | null;
+  avatar_path?: string | null;
 };
 
 function cleanText(value: unknown) {

@@ -21,7 +21,8 @@ export default async function PayrollPage() {
     !currentProfile ||
     (currentProfile.role !== "admin" &&
       currentProfile.role !== "branch_lead" &&
-      currentProfile.role !== "sub_branch_lead")
+      currentProfile.role !== "sub_branch_lead" &&
+      currentProfile.role !== "staff")
   ) {
     return (
       <div className="flex items-center justify-center p-16 text-[#001A3D]/50">

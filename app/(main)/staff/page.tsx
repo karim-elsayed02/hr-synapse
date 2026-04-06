@@ -11,11 +11,16 @@ export type StaffRow = {
   department: string | null;
   phone: string | null;
   emergency_contact: string | null;
+  hourly_rate: number | null;
   created_at: string | null;
   updated_at: string | null;
 };
 
-export default async function StaffPage() {
+type StaffPageProps = {
+  searchParams: Record<string, string | string[] | undefined>;
+};
+
+export default async function StaffPage({ searchParams }: StaffPageProps) {
   const supabase = createClient();
 
   const {
@@ -33,7 +38,7 @@ export default async function StaffPage() {
   const { data: staff, error } = await supabase
     .from("profiles")
     .select(
-      "id, full_name, email, role, branch, department, phone, emergency_contact, created_at, updated_at"
+      "id, full_name, email, role, branch, department, phone, emergency_contact, hourly_rate, created_at, updated_at"
     )
     .order("full_name", { ascending: true });
 
@@ -43,12 +48,18 @@ export default async function StaffPage() {
 
   const isAdmin = currentProfile?.role === "admin";
 
+  const addStaffRaw = searchParams.addStaff;
+  const addStaffParam = Array.isArray(addStaffRaw) ? addStaffRaw[0] : addStaffRaw;
+  const openAddStaffModal =
+    isAdmin && (addStaffParam === "1" || addStaffParam === "true");
+
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
       <StaffDirectoryClient
         initialStaff={(staff ?? []) as StaffRow[]}
         currentUserRole={currentProfile?.role ?? "staff"}
         canManageStaff={isAdmin}
+        initialOpenAddStaff={openAddStaffModal}
       />
     </div>
   );

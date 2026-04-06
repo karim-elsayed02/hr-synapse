@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
-import { Edit, Mail, Phone, MapPin, Calendar, Shield, FileText, Clock } from "lucide-react"
+import { Edit, Mail, Phone, MapPin, Calendar, Shield, FileText, Clock, Banknote } from "lucide-react"
 import { getUserDisplayName, getUserInitials } from "@/lib/utils/user-display"
+import { formatBranchLabel, formatSubBranchLabel } from "@/lib/utils/org-structure"
 
 interface StaffMember {
   id: string // Changed from number to string to match Supabase UUID
@@ -16,10 +17,14 @@ interface StaffMember {
   phone?: string
   role: string // Made more flexible, not just specific roles
   branch: string
+  /** Sub-branch (stored as `department` on profiles) */
+  department?: string | null
   compliance_status: string // Made more flexible
   hire_date: string
   last_active: string
   address?: string
+  /** Default hourly pay rate (GBP); optional */
+  hourly_rate?: number | null
   emergency_contact?: {
     name: string
     phone: string
@@ -72,6 +77,17 @@ export function StaffProfile({ staff, canEdit = false, onEdit }: StaffProfilePro
   const displayName = getUserDisplayName(staff)
   const initials = getUserInitials(staff)
 
+  const hourlyRateDisplay = (() => {
+    const v = staff.hourly_rate
+    if (v === null || v === undefined || Number.isNaN(Number(v))) return null
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: "GBP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(Number(v))
+  })()
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -90,7 +106,12 @@ export function StaffProfile({ staff, canEdit = false, onEdit }: StaffProfilePro
                   <Badge variant="secondary" className="capitalize">
                     {staff.role || "staff"}
                   </Badge>
-                  <Badge variant="outline">{staff.branch || "Main Office"}</Badge>
+                  {formatBranchLabel(staff.branch) !== "—" ? (
+                    <Badge variant="outline">{formatBranchLabel(staff.branch)}</Badge>
+                  ) : null}
+                  {formatSubBranchLabel(staff.department) !== "—" ? (
+                    <Badge variant="outline">{formatSubBranchLabel(staff.department)}</Badge>
+                  ) : null}
                   <Badge variant="secondary" className={getComplianceColor(staff.compliance_status || "pending")}>
                     {staff.compliance_status || "pending"}
                   </Badge>
@@ -128,6 +149,29 @@ export function StaffProfile({ staff, canEdit = false, onEdit }: StaffProfilePro
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="flex items-center space-x-3">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Branch: </span>
+                    {formatBranchLabel(staff.branch)}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <MapPin className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm">
+                    <span className="font-medium text-gray-700 dark:text-gray-300">Sub-branch: </span>
+                    {formatSubBranchLabel(staff.department)}
+                  </span>
+                </div>
+                {hourlyRateDisplay ? (
+                  <div className="flex items-center space-x-3">
+                    <Banknote className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Hourly rate: </span>
+                      {hourlyRateDisplay}
+                    </span>
+                  </div>
+                ) : null}
                 <div className="flex items-center space-x-3">
                   <Mail className="h-4 w-4 text-gray-400" />
                   <span className="text-sm">{staff.email || "No email provided"}</span>

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isManagerLikeRole } from "@/lib/utils/permissions";
+import { isAllowedBranchName, isAllowedSubBranchName } from "@/lib/utils/org-structure";
 import {
   approveTask,
   assignTaskToUser,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/actions/task-actions";
 import { CreateTaskSheet } from "@/components/tasks/create-task-sheet";
 import { RecentTaskLogs } from "@/components/tasks/recent-task-logs";
-import { CalendarDays, SlidersHorizontal } from "lucide-react";
+import { CalendarDays, SlidersHorizontal, ShieldCheck } from "lucide-react";
 
 type TaskRow = {
   id: string;
@@ -25,6 +25,7 @@ type TaskRow = {
   claimed_by: string | null;
   branch_id: string | null;
   sub_branch_id: string | null;
+  is_admin: boolean;
   branch: { id: string; name: string } | { id: string; name: string }[] | null;
   sub_branch: { id: string; name: string } | { id: string; name: string }[] | null;
   claimed_by_profile:
@@ -84,7 +85,7 @@ export default async function TasksPage() {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, branch, department")
     .eq("id", user.id)
     .single();
 
@@ -102,7 +103,7 @@ export default async function TasksPage() {
         .from("tasks")
         .select(`
           id, title, description, assigned_hours, status, due_date,
-          created_at, claimed_by, branch_id, sub_branch_id,
+          created_at, claimed_by, branch_id, sub_branch_id, is_admin,
           branch:branches(id, name),
           sub_branch:sub_branches(id, name),
           claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
@@ -121,12 +122,39 @@ export default async function TasksPage() {
     );
   }
 
-  const tasks = (taskData ?? []) as unknown as TaskRow[];
-  const branches = (branchData ?? []) as unknown as BranchRow[];
-  const subBranches = (subBranchData ?? []) as unknown as SubBranchRow[];
+  const allTasks = (taskData ?? []) as unknown as TaskRow[];
+  const branches = ((branchData ?? []) as unknown as BranchRow[]).filter((b) =>
+    isAllowedBranchName(b.name)
+  );
+  const subBranches = ((subBranchData ?? []) as unknown as SubBranchRow[]).filter((s) =>
+    isAllowedSubBranchName(s.name)
+  );
 
-  const canCreate = profile.role === "admin" || isManagerLikeRole(profile.role);
   const isAdmin = profile.role === "admin";
+  const isBranchLead = profile.role === "branch_lead";
+  const canCreate = isAdmin || isBranchLead;
+
+  const userBranch = profile.branch ?? null;
+  const userSubBranch = profile.department ?? null;
+
+  const tasks = allTasks.filter((t) => {
+    if (isAdmin) return true;
+
+    if (t.is_admin && !isBranchLead) return false;
+
+    const taskBranch = rel(t.branch);
+    const taskSubBranch = rel(t.sub_branch);
+
+    if (isBranchLead) {
+      if (!taskBranch) return true;
+      return taskBranch.name === userBranch;
+    }
+
+    if (!taskBranch) return true;
+    if (taskBranch.name !== userBranch) return false;
+    if (!taskSubBranch) return true;
+    return taskSubBranch.name === userSubBranch;
+  });
 
   let staffForAssign: { id: string; full_name: string | null }[] = [];
   if (canCreate) {
@@ -312,14 +340,22 @@ function TaskCard({
 
   return (
     <div className="curator-card group relative overflow-hidden p-5 transition-transform duration-200 hover:-translate-y-0.5">
-      {/* Category tag */}
-      {branch && (
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tag.bg}`}
-        >
-          {branch.name}
-        </span>
-      )}
+      {/* Category tag + admin badge */}
+      <div className="flex flex-wrap items-center gap-2">
+        {branch && (
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tag.bg}`}
+          >
+            {branch.name}
+          </span>
+        )}
+        {task.is_admin && (
+          <span className="inline-flex items-center gap-1 rounded-md bg-[#001A3D]/10 px-2 py-1 text-[10px] font-semibold text-[#001A3D]">
+            <ShieldCheck className="h-3 w-3" />
+            RESTRICTED
+          </span>
+        )}
+      </div>
 
       {/* Title + description */}
       <h3 className="mt-3 font-medium leading-snug text-[#001A3D]">{task.title}</h3>

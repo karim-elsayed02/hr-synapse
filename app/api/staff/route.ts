@@ -2,8 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { isStaffProfileRole } from "@/lib/utils/permissions";
+import { validateProfileBranchDept } from "@/lib/utils/org-structure";
 
 export const dynamic = "force-dynamic";
+
+function parseHourlyRate(
+  input: unknown
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  if (input === undefined || input === null || input === "") {
+    return { ok: true, value: null };
+  }
+  const n = typeof input === "number" ? input : parseFloat(String(input).trim());
+  if (Number.isNaN(n)) {
+    return { ok: false, error: "Invalid hourly rate" };
+  }
+  if (n < 0) {
+    return { ok: false, error: "Hourly rate cannot be negative" };
+  }
+  return { ok: true, value: n };
+}
 
 function getServiceRoleClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -71,7 +88,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, full_name, email, role, branch, department, phone, emergency_contact, created_at, updated_at"
+        "id, full_name, email, role, branch, department, phone, emergency_contact, hourly_rate, created_at, updated_at"
       )
       .order("full_name", { ascending: true });
 
@@ -104,8 +121,6 @@ export async function POST(request: NextRequest) {
     const full_name = String(body.full_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const newRole = String(body.role ?? "staff").trim();
-    const branch = String(body.branch ?? "").trim() || null;
-    const department = String(body.department ?? "").trim() || null;
     const phone = String(body.phone ?? "").trim() || null;
     const emergency_contact = String(body.emergency_contact ?? "").trim() || null;
 
@@ -118,6 +133,17 @@ export async function POST(request: NextRequest) {
 
     if (!isStaffProfileRole(newRole)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    const branchDept = validateProfileBranchDept(body.branch, body.department);
+    if (!branchDept.ok) {
+      return NextResponse.json({ error: branchDept.error }, { status: 400 });
+    }
+    const { branch, department } = branchDept;
+
+    const rateParsed = parseHourlyRate(body.hourly_rate);
+    if (!rateParsed.ok) {
+      return NextResponse.json({ error: rateParsed.error }, { status: 400 });
     }
 
     const adminClient = getServiceRoleClient();
@@ -155,6 +181,7 @@ export async function POST(request: NextRequest) {
         department,
         phone,
         emergency_contact,
+        hourly_rate: rateParsed.value,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }
@@ -208,15 +235,26 @@ export async function PATCH(request: NextRequest) {
 
     const adminClient = getServiceRoleClient();
 
+    const branchDept = validateProfileBranchDept(body.branch, body.department);
+    if (!branchDept.ok) {
+      return NextResponse.json({ error: branchDept.error }, { status: 400 });
+    }
+
+    const rateParsed = parseHourlyRate(body.hourly_rate);
+    if (!rateParsed.ok) {
+      return NextResponse.json({ error: rateParsed.error }, { status: 400 });
+    }
+
     const { error } = await adminClient
       .from("profiles")
       .update({
         full_name,
         role: newRole,
-        branch: String(body.branch ?? "").trim() || null,
-        department: String(body.department ?? "").trim() || null,
+        branch: branchDept.branch,
+        department: branchDept.department,
         phone: String(body.phone ?? "").trim() || null,
         emergency_contact: String(body.emergency_contact ?? "").trim() || null,
+        hourly_rate: rateParsed.value,
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
@@ -323,8 +361,6 @@ export async function PUT(request: NextRequest) {
     const full_name = String(body.full_name ?? "").trim();
     const email = String(body.email ?? "").trim().toLowerCase();
     const newRole = String(body.role ?? "staff").trim();
-    const branch = String(body.branch ?? "").trim() || null;
-    const department = String(body.department ?? "").trim() || null;
     const phone = String(body.phone ?? "").trim() || null;
     const emergency_contact = String(body.emergency_contact ?? "").trim() || null;
 
@@ -337,6 +373,17 @@ export async function PUT(request: NextRequest) {
 
     if (!isStaffProfileRole(newRole)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+    }
+
+    const branchDept = validateProfileBranchDept(body.branch, body.department);
+    if (!branchDept.ok) {
+      return NextResponse.json({ error: branchDept.error }, { status: 400 });
+    }
+    const { branch, department } = branchDept;
+
+    const rateParsed = parseHourlyRate(body.hourly_rate);
+    if (!rateParsed.ok) {
+      return NextResponse.json({ error: rateParsed.error }, { status: 400 });
     }
 
     const adminClient = getServiceRoleClient();
@@ -374,6 +421,7 @@ export async function PUT(request: NextRequest) {
         department,
         phone,
         emergency_contact,
+        hourly_rate: rateParsed.value,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }

@@ -24,6 +24,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { useRouter } from "next/navigation"
+import { getAvatarUrl } from "@/lib/utils/avatar"
 
 const pageNames: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -33,8 +34,6 @@ const pageNames: Record<string, string> = {
   "/tasks": "Task Board",
   "/documents": "Documents",
   "/announcements": "Announcements",
-  "/admin/users": "User Management",
-  "/admin/users/create": "Create User",
   "/settings": "Settings",
 }
 
@@ -48,7 +47,12 @@ export function Header() {
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [isSearching, setIsSearching] = useState(false)
 
-  const currentPageName = pageNames[pathname] || "SynapseUK"
+  const currentPageName =
+    pathname === "/profile"
+      ? "My Profile"
+      : pathname.startsWith("/profile/")
+        ? "Profile"
+        : pageNames[pathname] || "SynapseUK"
 
   const handleGoBack = () => {
     router.back()
@@ -167,8 +171,12 @@ export function Header() {
                     variant="ghost"
                     className="h-10 gap-2 rounded-xl pl-1 pr-2 hover:bg-[#001A3D]/5"
                   >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-xs font-semibold text-[#FFB84D] ring-2 ring-[#FFB84D]/20">
-                      {profile?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || "?"}
+                    <span className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-xs font-semibold text-[#FFB84D] ring-2 ring-[#FFB84D]/20">
+                      {getAvatarUrl(profile?.avatar_path) ? (
+                        <img src={getAvatarUrl(profile?.avatar_path)!} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        profile?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || "?"
+                      )}
                     </span>
                     <span className="hidden max-w-[120px] truncate text-sm font-medium text-[#001A3D] sm:inline">
                       {profile?.full_name?.split(" ")[0] || "User"}

@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, ShieldCheck } from "lucide-react";
 
 interface Branch {
   id: string;
@@ -35,6 +35,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedBranch, setSelectedBranch] = useState("");
+  const [isAdminOnly, setIsAdminOnly] = useState(false);
 
   const filteredSubs = selectedBranch
     ? subBranches.filter((s) => s.branch_id === selectedBranch)
@@ -53,6 +54,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
         subBranchId: String(fd.get("subBranchId") ?? "").trim() || null,
         assignedHours: Number(fd.get("assignedHours")) || 1,
         dueDate: String(fd.get("dueDate") ?? "").trim() || null,
+        is_admin: isAdminOnly,
       };
 
       const res = await fetch("/api/tasks/create-tasks", {
@@ -71,6 +73,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
 
       setOpen(false);
       setSelectedBranch("");
+      setIsAdminOnly(false);
       router.refresh();
     } catch (err) {
       console.error("Create task failed:", err);
@@ -99,8 +102,8 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
           <div className="space-y-4 px-6 pb-6 pt-2">
             <p className="text-sm leading-relaxed text-[#001A3D]/70">
               Only <span className="font-medium text-[#001A3D]">administrators</span> and{" "}
-              <span className="font-medium text-[#001A3D]">managers</span> can create tasks. Ask your
-              line manager if you need a new task added to the board.
+              <span className="font-medium text-[#001A3D]">branch leads</span> can create tasks. Ask your
+              branch lead if you need a new task added to the board.
             </p>
             <button
               type="button"
@@ -207,6 +210,32 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                   type="date"
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
                 />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl bg-[#f8f9fa] px-4 py-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isAdminOnly}
+                onClick={() => setIsAdminOnly((v) => !v)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ${
+                  isAdminOnly ? "bg-[#001A3D]" : "bg-[#001A3D]/20"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transition-transform ${
+                    isAdminOnly ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="h-4 w-4 text-[#001A3D]/60" />
+                  <span className="text-sm font-medium text-[#001A3D]">Admin / Branch Lead only</span>
+                </div>
+                <p className="mt-0.5 text-xs text-[#001A3D]/50">
+                  Only admins and branch leads will see this task
+                </p>
               </div>
             </div>
           </fieldset>

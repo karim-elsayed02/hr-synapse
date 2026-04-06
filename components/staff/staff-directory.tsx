@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Plus, Eye, Edit, MoreHorizontal, Settings } from "lucide-react"
+import { Search, Plus, Eye, Edit, MoreHorizontal } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
 import { getUserDisplayName, getUserInitials } from "@/lib/utils/user-display"
@@ -29,10 +29,9 @@ interface StaffDirectoryProps {
   staff: StaffMember[]
   onEdit?: (staff: StaffMember) => void
   canEdit?: boolean
-  isAdmin?: boolean // Added isAdmin prop
 }
 
-export function StaffDirectory({ staff, onEdit, canEdit = false, isAdmin = false }: StaffDirectoryProps) {
+export function StaffDirectory({ staff, onEdit, canEdit = false }: StaffDirectoryProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [roleFilter, setRoleFilter] = useState<string>("all")
   const [branchFilter, setBranchFilter] = useState<string>("all")
@@ -68,7 +67,7 @@ export function StaffDirectory({ staff, onEdit, canEdit = false, isAdmin = false
   const uniqueDepartments = [...new Set(staff.map((s) => s.department))] // Added unique departments
 
   const handleEditStaff = (staffMember: StaffMember) => {
-    router.push(`/staff/${staffMember.id}`) // Use Next.js router for navigation
+    router.push(`/profile/${staffMember.id}`) // Use Next.js router for navigation
   }
 
   return (
@@ -80,14 +79,6 @@ export function StaffDirectory({ staff, onEdit, canEdit = false, isAdmin = false
           <p className="text-gray-600 dark:text-gray-400">Manage your team members and their compliance status</p>
         </div>
         <div className="flex gap-2">
-          {isAdmin && (
-            <Link href="/admin/users">
-              <Button variant="outline">
-                <Settings className="h-4 w-4 mr-2" />
-                User Management
-              </Button>
-            </Link>
-          )}
           {canEdit && (
             <Link href="/staff/new">
               <Button className="bg-blue-600 hover:bg-blue-700">
@@ -191,7 +182,7 @@ export function StaffDirectory({ staff, onEdit, canEdit = false, isAdmin = false
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
-                          <Link href={`/staff/${member.id}`}>
+                          <Link href={`/profile/${member.id}`}>
                             <Eye className="h-4 w-4 mr-2" />
                             View Profile
                           </Link>

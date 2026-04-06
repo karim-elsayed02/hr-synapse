@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Copy,
   Download,
@@ -36,12 +37,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { STAFF_PROFILE_ROLES } from "@/lib/utils/permissions";
+import {
+  BRANCH_SLUGS,
+  SUB_BRANCH_SLUGS,
+  BRANCH_LABELS,
+  SUB_BRANCH_LABELS,
+  formatBranchLabel,
+  formatSubBranchLabel,
+  normalizeBranchSlug,
+  normalizeSubBranchSlug,
+} from "@/lib/utils/org-structure";
 import type { StaffRow } from "@/app/(main)/staff/page";
+import { EditStaffModal } from "@/components/staff/edit-staff-modal";
 
 type Props = {
   initialStaff: StaffRow[];
   currentUserRole: string;
   canManageStaff: boolean;
+  /** When true (e.g. `/staff?addStaff=1`), opens the add-staff dialog on load */
+  initialOpenAddStaff?: boolean;
 };
 
 type CreateStaffPayload = {
@@ -52,16 +66,7 @@ type CreateStaffPayload = {
   department?: string;
   phone?: string;
   emergency_contact?: string;
-};
-
-type UpdateStaffPayload = {
-  id: string;
-  full_name: string;
-  role: string;
-  branch?: string;
-  department?: string;
-  phone?: string;
-  emergency_contact?: string;
+  hourly_rate?: string;
 };
 
 const PAGE_SIZE = 8;
@@ -100,13 +105,26 @@ function roleLabel(role: string | null) {
   return "STAFF";
 }
 
+function formatGbpHourly(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = typeof value === "number" ? value : Number(value);
+  if (Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(n);
+}
+
 function exportStaffCsv(rows: StaffRow[]) {
   const headers = [
     "Full name",
     "Email",
     "Role",
     "Branch",
-    "Department",
+    "Sub-branch",
+    "Hourly rate (GBP)",
     "Phone",
     "ID",
   ];
@@ -121,8 +139,13 @@ function exportStaffCsv(rows: StaffRow[]) {
         escape(p.full_name),
         escape(p.email),
         escape(p.role),
-        escape(p.branch),
-        escape(p.department),
+        escape(formatBranchLabel(p.branch)),
+        escape(formatSubBranchLabel(p.department)),
+        escape(
+          p.hourly_rate != null && !Number.isNaN(Number(p.hourly_rate))
+            ? String(Number(p.hourly_rate))
+            : ""
+        ),
         escape(p.phone),
         escape(p.id),
       ].join(",")
@@ -154,16 +177,21 @@ export default function StaffDirectoryClient({
   initialStaff,
   currentUserRole,
   canManageStaff,
+  initialOpenAddStaff = false,
 }: Props) {
+  const router = useRouter();
   const [staff, setStaff] = useState<StaffRow[]>(initialStaff);
   const [query, setQuery] = useState("");
-  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [subBranchFilter, setSubBranchFilter] = useState<string>("all");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editStaffTarget, setEditStaffTarget] = useState<StaffRow | null>(null);
 
-  const [addStaffOpen, setAddStaffOpen] = useState(false);
+  const [addStaffOpen, setAddStaffOpen] = useState(
+    () => Boolean(initialOpenAddStaff && canManageStaff)
+  );
   const [addStaffForm, setAddStaffForm] = useState<CreateStaffPayload>({
     full_name: "",
     email: "",
@@ -172,6 +200,7 @@ export default function StaffDirectoryClient({
     department: "",
     phone: "",
     emergency_contact: "",
+    hourly_rate: "",
   });
   const [addStaffMode, setAddStaffMode] = useState<"invite" | "password">("invite");
   const [generatedPassword, setGeneratedPassword] = useState("");
@@ -182,23 +211,14 @@ export default function StaffDirectoryClient({
   >(null);
   const [addStaffError, setAddStaffError] = useState<string | null>(null);
 
-  const [editForm, setEditForm] = useState<UpdateStaffPayload>({
-    id: "",
-    full_name: "",
-    role: "staff",
-    branch: "",
-    department: "",
-    phone: "",
-    emergency_contact: "",
-  });
-
-  const uniqueBranches = useMemo(() => {
-    const s = new Set<string>();
-    for (const p of staff) {
-      if (p.branch?.trim()) s.add(p.branch.trim());
-    }
-    return Array.from(s).sort();
-  }, [staff]);
+  useEffect(() => {
+    if (!initialOpenAddStaff || !canManageStaff) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("addStaff")) return;
+    params.delete("addStaff");
+    const next = params.toString();
+    router.replace(`/staff${next ? `?${next}` : ""}`, { scroll: false });
+  }, [initialOpenAddStaff, canManageStaff, router]);
 
   const filteredStaff = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -211,18 +231,22 @@ export default function StaffDirectoryClient({
         (person.role ?? "").toLowerCase().includes(q) ||
         (person.branch ?? "").toLowerCase().includes(q) ||
         (person.department ?? "").toLowerCase().includes(q) ||
+        formatBranchLabel(person.branch).toLowerCase().includes(q) ||
+        formatSubBranchLabel(person.department).toLowerCase().includes(q) ||
         person.id.toLowerCase().includes(q) ||
         synId.includes(q);
 
-      const matchesLocation =
-        locationFilter === "all" || (person.branch ?? "").trim() === locationFilter;
+      const bSlug = normalizeBranchSlug(person.branch ?? "");
+      const sSlug = normalizeSubBranchSlug(person.department ?? "");
+      const matchesBranch = branchFilter === "all" || bSlug === branchFilter;
+      const matchesSubBranch = subBranchFilter === "all" || sSlug === subBranchFilter;
 
       const matchesRole =
         roleFilter === "all" || (person.role ?? "staff") === roleFilter;
 
-      return matchesQuery && matchesLocation && matchesRole;
+      return matchesQuery && matchesBranch && matchesSubBranch && matchesRole;
     });
-  }, [staff, query, locationFilter, roleFilter]);
+  }, [staff, query, branchFilter, subBranchFilter, roleFilter]);
 
   const totalFiltered = filteredStaff.length;
   const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
@@ -253,7 +277,8 @@ export default function StaffDirectoryClient({
   const branchConcentration = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of staff) {
-      const b = (p.branch ?? "Unassigned").trim() || "Unassigned";
+      const label = formatBranchLabel(p.branch);
+      const b = label === "—" ? "Unassigned" : label;
       counts.set(b, (counts.get(b) ?? 0) + 1);
     }
     let top = "";
@@ -285,6 +310,7 @@ export default function StaffDirectoryClient({
       department: "",
       phone: "",
       emergency_contact: "",
+      hourly_rate: "",
     });
     setGeneratedPassword(generateStaffPassword());
     setAddStaffSuccess(null);
@@ -296,6 +322,11 @@ export default function StaffDirectoryClient({
     setLoading(true);
     setAddStaffError(null);
     const email = addStaffForm.email.trim();
+    if (!addStaffForm.branch?.trim() || !addStaffForm.department?.trim()) {
+      setAddStaffError("Please select a branch and sub-branch.");
+      setLoading(false);
+      return;
+    }
     try {
       if (addStaffMode === "invite") {
         const res = await fetch("/api/staff", {
@@ -335,41 +366,6 @@ export default function StaffDirectoryClient({
     }
   }
 
-  function startEdit(person: StaffRow) {
-    setEditingId(person.id);
-    setEditForm({
-      id: person.id,
-      full_name: person.full_name ?? "",
-      role: person.role ?? "staff",
-      branch: person.branch ?? "",
-      department: person.department ?? "",
-      phone: person.phone ?? "",
-      emergency_contact: person.emergency_contact ?? "",
-    });
-  }
-
-  async function handleUpdateStaff(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await fetch("/api/staff", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editForm),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update staff");
-      await refreshStaff();
-      setEditingId(null);
-      alert("Staff member updated.");
-    } catch (error) {
-      console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to update staff");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleDeleteStaff(id: string, name: string | null) {
     const confirmed = window.confirm(
       `Delete ${name || "this staff member"}? This will also remove their auth user.`
@@ -385,6 +381,7 @@ export default function StaffDirectoryClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to delete staff");
       setStaff((prev) => prev.filter((person) => person.id !== id));
+      setEditStaffTarget((current) => (current?.id === id ? null : current));
       alert("Staff member deleted.");
     } catch (error) {
       console.error(error);
@@ -562,27 +559,43 @@ export default function StaffDirectoryClient({
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="add-branch">Branch</Label>
-                    <Input
+                    <select
                       id="add-branch"
+                      required
                       value={addStaffForm.branch ?? ""}
                       onChange={(e) =>
                         setAddStaffForm((p) => ({ ...p, branch: e.target.value }))
                       }
-                      className="rounded-xl border-[#001A3D]/15"
+                      className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                       disabled={loading}
-                    />
+                    >
+                      <option value="">Select branch…</option>
+                      {BRANCH_SLUGS.map((slug) => (
+                        <option key={slug} value={slug}>
+                          {BRANCH_LABELS[slug]}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-dept">Department</Label>
-                    <Input
+                    <Label htmlFor="add-dept">Sub-branch</Label>
+                    <select
                       id="add-dept"
+                      required
                       value={addStaffForm.department ?? ""}
                       onChange={(e) =>
                         setAddStaffForm((p) => ({ ...p, department: e.target.value }))
                       }
-                      className="rounded-xl border-[#001A3D]/15"
+                      className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                       disabled={loading}
-                    />
+                    >
+                      <option value="">Select sub-branch…</option>
+                      {SUB_BRANCH_SLUGS.map((slug) => (
+                        <option key={slug} value={slug}>
+                          {SUB_BRANCH_LABELS[slug]}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -609,6 +622,24 @@ export default function StaffDirectoryClient({
                     className="rounded-xl border-[#001A3D]/15"
                     disabled={loading}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="add-hourly-rate">Hourly rate (GBP)</Label>
+                  <Input
+                    id="add-hourly-rate"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    placeholder="e.g. 12.50"
+                    value={addStaffForm.hourly_rate ?? ""}
+                    onChange={(e) =>
+                      setAddStaffForm((p) => ({ ...p, hourly_rate: e.target.value }))
+                    }
+                    className="rounded-xl border-[#001A3D]/15"
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-[#001A3D]/45">Optional. Used as default for payroll.</p>
                 </div>
                 {addStaffMode === "password" ? (
                   <div className="space-y-2">
@@ -671,6 +702,14 @@ export default function StaffDirectoryClient({
         </DialogContent>
       </Dialog>
 
+      {canManageStaff ? (
+        <EditStaffModal
+          staff={editStaffTarget}
+          onClose={() => setEditStaffTarget(null)}
+          onSaved={refreshStaff}
+        />
+      ) : null}
+
       {/* Page header — Digital Curator */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -714,8 +753,8 @@ export default function StaffDirectoryClient({
         <div className="space-y-6 xl:col-span-2">
           {/* Filters */}
           <div className="curator-card p-6 shadow-[var(--curator-shadow)]">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="relative md:col-span-1">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="relative xl:col-span-1">
                 <Filter className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#001A3D]/35" />
                 <input
                   type="search"
@@ -724,25 +763,44 @@ export default function StaffDirectoryClient({
                     setQuery(e.target.value);
                     setPage(1);
                   }}
-                  placeholder="Search by name, role, or ID..."
+                  placeholder="Search by name, role, branch, or ID..."
                   className="h-12 w-full rounded-2xl bg-[#f3f4f5] pl-11 pr-4 text-sm text-[#001A3D] outline-none ring-0 transition placeholder:text-[#001A3D]/40 focus:bg-white focus:shadow-[0_0_0_2px_rgba(255,184,77,0.35)]"
                 />
               </div>
               <Select
-                value={locationFilter}
+                value={branchFilter}
                 onValueChange={(v) => {
-                  setLocationFilter(v);
+                  setBranchFilter(v);
                   setPage(1);
                 }}
               >
                 <SelectTrigger className="h-12 rounded-2xl border-0 bg-[#f3f4f5] text-[#001A3D] shadow-none focus:ring-2 focus:ring-[#FFB84D]/40">
-                  <SelectValue placeholder="All locations" />
+                  <SelectValue placeholder="All branches" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All locations</SelectItem>
-                  {uniqueBranches.map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
+                  <SelectItem value="all">All branches</SelectItem>
+                  {BRANCH_SLUGS.map((slug) => (
+                    <SelectItem key={slug} value={slug}>
+                      {BRANCH_LABELS[slug]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={subBranchFilter}
+                onValueChange={(v) => {
+                  setSubBranchFilter(v);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-12 rounded-2xl border-0 bg-[#f3f4f5] text-[#001A3D] shadow-none focus:ring-2 focus:ring-[#FFB84D]/40">
+                  <SelectValue placeholder="All sub-branches" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sub-branches</SelectItem>
+                  {SUB_BRANCH_SLUGS.map((slug) => (
+                    <SelectItem key={slug} value={slug}>
+                      {SUB_BRANCH_LABELS[slug]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -772,12 +830,14 @@ export default function StaffDirectoryClient({
           {/* Table */}
           <div className="curator-card overflow-hidden shadow-[var(--curator-shadow)]">
             <div className="overflow-x-auto">
-              <table className="min-w-[720px] w-full border-collapse">
+              <table className="min-w-[980px] w-full border-collapse">
                 <thead>
                   <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[#001A3D]/45">
                     <th className="px-6 py-4">Staff member</th>
                     <th className="px-4 py-4">Role</th>
                     <th className="px-4 py-4">Branch</th>
+                    <th className="px-4 py-4">Sub-branch</th>
+                    <th className="px-4 py-4">Rate / hr</th>
                     <th className="min-w-[180px] px-4 py-4">Contact details</th>
                     {canManageStaff ? <th className="w-12 px-4 py-4" /> : null}
                   </tr>
@@ -786,7 +846,7 @@ export default function StaffDirectoryClient({
                   {paginatedStaff.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canManageStaff ? 5 : 4}
+                        colSpan={canManageStaff ? 7 : 6}
                         className="px-6 py-16 text-center text-sm text-[#001A3D]/50"
                       >
                         No staff match your filters.
@@ -794,7 +854,6 @@ export default function StaffDirectoryClient({
                     </tr>
                   ) : (
                     paginatedStaff.map((person) => {
-                      const isEditing = editingId === person.id;
                       const syn = syntheticStaffId(person.id);
 
                       return (
@@ -803,148 +862,81 @@ export default function StaffDirectoryClient({
                           className="transition-colors hover:bg-[#f8f9fa]/90"
                         >
                           <td className="px-6 py-4 align-middle">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editForm.full_name}
-                                onChange={(e) =>
-                                  setEditForm((prev) => ({
-                                    ...prev,
-                                    full_name: e.target.value,
-                                  }))
-                                }
-                                className="h-10 w-full max-w-[220px] rounded-xl bg-[#f3f4f5] px-3 text-sm"
-                              />
-                            ) : (
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-11 w-11 ring-2 ring-white shadow-sm">
-                                  <AvatarFallback className="bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-xs font-semibold text-[#FFB84D]">
-                                    {initials(person.full_name)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="min-w-0">
-                                  <Link
-                                    href={`/staff/${person.id}`}
-                                    className="font-semibold text-[#001A3D] hover:text-[#FFB84D] hover:underline"
-                                  >
-                                    {person.full_name?.trim() || "Unnamed user"}
-                                  </Link>
-                                  <p className="text-xs text-[#001A3D]/45">ID: {syn}</p>
-                                </div>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-11 w-11 ring-2 ring-white shadow-sm">
+                                <AvatarFallback className="bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-xs font-semibold text-[#FFB84D]">
+                                  {initials(person.full_name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <Link
+                                  href={`/profile/${person.id}`}
+                                  className="font-semibold text-[#001A3D] hover:text-[#FFB84D] hover:underline"
+                                >
+                                  {person.full_name?.trim() || "Unnamed user"}
+                                </Link>
+                                <p className="text-xs text-[#001A3D]/45">ID: {syn}</p>
                               </div>
-                            )}
+                            </div>
                           </td>
                           <td className="px-4 py-4 align-middle">
-                            {isEditing ? (
-                              <select
-                                value={editForm.role}
-                                onChange={(e) =>
-                                  setEditForm((prev) => ({ ...prev, role: e.target.value }))
-                                }
-                                className="h-10 rounded-xl border-0 bg-[#f3f4f5] px-2 text-sm"
-                              >
-                                {STAFF_PROFILE_ROLES.map((r) => (
-                                  <option key={r} value={r}>
-                                    {r}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span
-                                className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person.role)}`}
-                              >
-                                {roleLabel(person.role)}
-                              </span>
-                            )}
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person.role)}`}
+                            >
+                              {roleLabel(person.role)}
+                            </span>
                           </td>
                           <td className="px-4 py-4 align-middle">
-                            {isEditing ? (
-                              <input
-                                type="text"
-                                value={editForm.branch ?? ""}
-                                onChange={(e) =>
-                                  setEditForm((prev) => ({ ...prev, branch: e.target.value }))
-                                }
-                                className="h-10 w-full min-w-[100px] rounded-xl bg-[#f3f4f5] px-3 text-sm"
-                              />
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 text-sm text-[#001A3D]/80">
-                                <MapPin className="h-3.5 w-3.5 shrink-0 text-[#4DB8FF]" />
-                                {person.branch?.trim() || "—"}
-                              </span>
-                            )}
+                            <span className="inline-flex items-center gap-1.5 text-sm text-[#001A3D]/80">
+                              <MapPin className="h-3.5 w-3.5 shrink-0 text-[#4DB8FF]" />
+                              {formatBranchLabel(person.branch)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 align-middle">
+                            <span className="text-sm text-[#001A3D]/80">
+                              {formatSubBranchLabel(person.department)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 align-middle text-sm tabular-nums">
+                            <span className="text-[#001A3D]/85">
+                              {formatGbpHourly(person.hourly_rate)}
+                            </span>
                           </td>
                           <td className="px-4 py-4 align-middle text-sm">
-                            {isEditing ? (
-                              <div className="flex flex-col gap-2">
-                                <input
-                                  type="text"
-                                  value={editForm.phone ?? ""}
-                                  onChange={(e) =>
-                                    setEditForm((prev) => ({ ...prev, phone: e.target.value }))
-                                  }
-                                  placeholder="Phone"
-                                  className="h-9 rounded-lg bg-[#f3f4f5] px-2 text-xs"
-                                />
-                              </div>
-                            ) : (
-                              <div className="space-y-0.5">
-                                <p className="truncate text-[#001A3D]/85">{person.email || "—"}</p>
-                                <p className="text-xs text-[#001A3D]/50">{person.phone || "—"}</p>
-                              </div>
-                            )}
+                            <div className="space-y-0.5">
+                              <p className="truncate text-[#001A3D]/85">{person.email || "—"}</p>
+                              <p className="text-xs text-[#001A3D]/50">{person.phone || "—"}</p>
+                            </div>
                           </td>
                           {canManageStaff ? (
                             <td className="px-4 py-4 align-middle text-right">
-                              {isEditing ? (
-                                <form
-                                  onSubmit={handleUpdateStaff}
-                                  className="flex justify-end gap-2"
-                                >
-                                  <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="rounded-full bg-[#001A3D] px-3 py-1.5 text-xs font-semibold text-white"
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-9 w-9 rounded-full text-[#001A3D]/50 hover:bg-[#f3f4f5] hover:text-[#001A3D]"
                                   >
-                                    Save
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingId(null)}
-                                    className="rounded-full px-3 py-1.5 text-xs font-medium text-[#001A3D]/70 hover:bg-[#f3f4f5]"
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="rounded-2xl">
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/profile/${person.id}`}>View profile</Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setEditStaffTarget(person)}>
+                                    Edit
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-red-600 focus:text-red-600"
+                                    onClick={() =>
+                                      handleDeleteStaff(person.id, person.full_name)
+                                    }
                                   >
-                                    Cancel
-                                  </button>
-                                </form>
-                              ) : (
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-9 w-9 rounded-full text-[#001A3D]/50 hover:bg-[#f3f4f5] hover:text-[#001A3D]"
-                                    >
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="rounded-2xl">
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/staff/${person.id}`}>View profile</Link>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => startEdit(person)}>
-                                      Quick edit
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-red-600 focus:text-red-600"
-                                      onClick={() =>
-                                        handleDeleteStaff(person.id, person.full_name)
-                                      }
-                                    >
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              )}
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </td>
                           ) : null}
                         </tr>

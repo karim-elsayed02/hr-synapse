@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         type: "staff",
         title: staff.full_name || staff.email,
         subtitle: `${staff.role} ${staff.department ? `• ${staff.department}` : ""}`,
-        url: `/staff`,
+        url: `/profile/${staff.id}`,
       })),
     ]
 

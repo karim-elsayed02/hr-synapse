@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, email, full_name, role, branch_id")
+      .select("id, email, full_name, role, branch")
       .eq("id", authData.user.id)
       .single();
 
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
         email: profile.email,
         full_name: profile.full_name,
         role: profile.role,
-        branch_id: profile.branch_id,
+        branch: profile.branch,
       },
     });
   } catch (error) {

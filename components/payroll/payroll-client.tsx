@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Clock,
-  DollarSign,
   Download,
   Filter,
   FolderOpen,
@@ -52,6 +51,7 @@ type ProfileRef = {
   email: string | null;
   role: string | null;
   branch: string | null;
+  hourly_rate?: number | string | null;
 };
 
 type PayrollEntry = {
@@ -149,7 +149,8 @@ function exportCsv(rows: PayrollEntry[]) {
     ...rows.map((r) => {
       const p = one(r.profile);
       const t = one(r.task);
-      return [esc(p?.full_name), esc(p?.email), esc(p?.role), esc(p?.branch), esc(t?.title), r.hours, r.hourly_rate, r.total_pay, r.status, esc(r.paid_at?.slice(0, 10)), esc(r.created_at?.slice(0, 10))].join(",");
+      const line = Number(r.hours) * Number(r.hourly_rate);
+      return [esc(p?.full_name), esc(p?.email), esc(p?.role), esc(p?.branch), esc(t?.title), r.hours, r.hourly_rate, line, r.status, esc(r.paid_at?.slice(0, 10)), esc(r.created_at?.slice(0, 10))].join(",");
     }),
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -181,17 +182,9 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
   const [addSuccess, setAddSuccess] = useState(false);
   const [approvedTasks, setApprovedTasks] = useState<ApprovedTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
-  const [hourlyRate, setHourlyRate] = useState("");
   const [hoursOverride, setHoursOverride] = useState("");
 
   const [togglingId, setTogglingId] = useState<string | null>(null);
-
-  const [payingEntry, setPayingEntry] = useState<PayrollEntry | null>(null);
-  const [payHours, setPayHours] = useState("");
-  const [payRate, setPayRate] = useState("");
-  const [payAmount, setPayAmount] = useState("");
-  const [payLoading, setPayLoading] = useState(false);
-  const [payError, setPayError] = useState<string | null>(null);
 
   /* ---- Batches state ---- */
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
@@ -248,7 +241,14 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  useEffect(() => { fetchEntries(); fetchBatches(); }, [fetchEntries, fetchBatches]);
+  useEffect(() => {
+    void fetchEntries();
+    if (isAdmin) void fetchBatches();
+  }, [fetchEntries, fetchBatches, isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin && tab === "batches") setTab("entries");
+  }, [isAdmin, tab]);
 
   /* ---- Entries filters ---- */
   const filtered = useMemo(() => {
@@ -271,7 +271,10 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
     });
   }, [entries, query, statusFilter]);
 
-  const totalPay = useMemo(() => filtered.reduce((s, e) => s + Number(e.total_pay), 0), [filtered]);
+  const totalPay = useMemo(
+    () => filtered.reduce((s, e) => s + Number(e.hours) * Number(e.hourly_rate), 0),
+    [filtered]
+  );
   const totalHours = useMemo(() => filtered.reduce((s, e) => s + Number(e.hours), 0), [filtered]);
   const paidCount = useMemo(() => filtered.filter((e) => e.status === "paid").length, [filtered]);
   const unpaidCount = useMemo(() => filtered.filter((e) => e.status === "unpaid").length, [filtered]);
@@ -284,9 +287,19 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => { setPage((p) => Math.min(Math.max(1, p), totalPages)); }, [totalPages]);
 
   const selectedTask = approvedTasks.find((t) => t.id === selectedTaskId) ?? null;
-  const effectiveHours = parseFloat(hoursOverride) || selectedTask?.assigned_hours || 0;
-  const effectiveRate = parseFloat(hourlyRate) || 0;
-  const computedPay = effectiveHours * effectiveRate;
+  const staffForTask = one(selectedTask?.claimed_by_profile ?? null);
+  const profileRateRaw = staffForTask?.hourly_rate;
+  const profileRate =
+    profileRateRaw != null && profileRateRaw !== ""
+      ? Number(profileRateRaw)
+      : NaN;
+  const hoursOverrideNum = parseFloat(hoursOverride);
+  const effectiveHours =
+    !Number.isNaN(hoursOverrideNum) && hoursOverrideNum > 0
+      ? hoursOverrideNum
+      : Number(selectedTask?.assigned_hours ?? 0) || 0;
+  const computedPay =
+    !Number.isNaN(profileRate) && profileRate > 0 ? effectiveHours * profileRate : 0;
 
   /* Unassigned unpaid entries (for assign-to-batch modal) */
   const unassignedUnpaid = useMemo(
@@ -297,7 +310,6 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
   /* ---- Entry handlers ---- */
   function resetModal() {
     setSelectedTaskId("");
-    setHourlyRate("");
     setHoursOverride("");
     setAddError(null);
     setAddSuccess(false);
@@ -311,7 +323,10 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
       const res = await fetch("/api/payroll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: selectedTaskId, hours: effectiveHours, hourly_rate: effectiveRate }),
+        body: JSON.stringify({
+          task_id: selectedTaskId,
+          hours: effectiveHours,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create entry");
@@ -324,44 +339,23 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  function openPayDialog(entry: PayrollEntry) {
-    setPayingEntry(entry);
-    setPayHours(String(entry.hours));
-    setPayRate(String(entry.hourly_rate));
-    setPayAmount(String(Number(entry.hours) * Number(entry.hourly_rate)));
-    setPayError(null);
-  }
-
-  async function handleMarkPaid() {
-    if (!payingEntry) return;
-    setPayLoading(true);
-    setPayError(null);
+  async function markPaid(entry: PayrollEntry) {
+    setTogglingId(entry.id);
     try {
-      const amount = parseFloat(payAmount);
-      const hours = parseFloat(payHours);
-      const rate = parseFloat(payRate);
-      if (!amount || amount <= 0) throw new Error("Enter a valid amount");
       const res = await fetch("/api/payroll", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: payingEntry.id,
-          status: "paid",
-          amount_paid: amount,
-          hours: hours > 0 ? hours : undefined,
-          hourly_rate: rate > 0 ? rate : undefined,
-        }),
+        body: JSON.stringify({ id: entry.id, status: "paid" }),
       });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to update");
       }
-      setPayingEntry(null);
-      await Promise.all([fetchEntries(), fetchBatches()]);
+      await Promise.all([fetchEntries(), isAdmin ? fetchBatches() : Promise.resolve()]);
     } catch (err) {
-      setPayError(err instanceof Error ? err.message : "Something went wrong");
+      console.error(err);
     } finally {
-      setPayLoading(false);
+      setTogglingId(null);
     }
   }
 
@@ -377,7 +371,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
         const data = await res.json();
         throw new Error(data.error || "Failed to update");
       }
-      await Promise.all([fetchEntries(), fetchBatches()]);
+      await Promise.all([fetchEntries(), isAdmin ? fetchBatches() : Promise.resolve()]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -513,7 +507,9 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
             <form onSubmit={handleAddEntry}>
               <DialogHeader>
                 <DialogTitle className="font-display text-xl">Add payment</DialogTitle>
-                <DialogDescription className="text-[#001A3D]/60">Select an approved task and set the hourly rate.</DialogDescription>
+                <DialogDescription className="text-[#001A3D]/60">
+                  Select an approved task. Total pay uses task hours (or your override) × the staff member&apos;s hourly rate from their profile.
+                </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
@@ -533,75 +529,58 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                   )}
                 </div>
                 {selectedTask && (
-                  <div className="rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D]/70">
-                    <p><span className="font-medium">Staff:</span> {one(selectedTask.claimed_by_profile)?.full_name ?? "—"}</p>
+                  <div className="rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D]/70 space-y-1">
+                    <p><span className="font-medium">Staff:</span> {staffForTask?.full_name ?? "—"}</p>
                     <p><span className="font-medium">Task hours:</span> {selectedTask.assigned_hours}h</p>
+                    <p>
+                      <span className="font-medium">Profile hourly rate:</span>{" "}
+                      {!Number.isNaN(profileRate) && profileRate > 0 ? (
+                        currency(profileRate)
+                      ) : (
+                        <span className="text-amber-700">Not set — add a rate in Staff Directory first</span>
+                      )}
+                    </p>
                   </div>
                 )}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="pay-hours">Hours</Label>
-                    <Input id="pay-hours" type="number" min="0.5" step="0.5" placeholder={String(selectedTask?.assigned_hours ?? "")} value={hoursOverride} onChange={(e) => setHoursOverride(e.target.value)} className="rounded-xl border-[#001A3D]/15" disabled={addLoading} />
-                    <p className="text-xs text-[#001A3D]/40">Leave blank to use task hours</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="pay-rate">Hourly rate (£)</Label>
-                    <Input id="pay-rate" type="number" min="0.01" step="0.01" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} className="rounded-xl border-[#001A3D]/15" required disabled={addLoading} />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="pay-hours">Hours (optional override)</Label>
+                  <Input
+                    id="pay-hours"
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    placeholder={selectedTask ? String(selectedTask.assigned_hours) : ""}
+                    value={hoursOverride}
+                    onChange={(e) => setHoursOverride(e.target.value)}
+                    className="rounded-xl border-[#001A3D]/15"
+                    disabled={addLoading}
+                  />
+                  <p className="text-xs text-[#001A3D]/40">Leave blank to use the task&apos;s assigned hours</p>
                 </div>
                 <div className="rounded-xl bg-[#f8f9fa] px-4 py-3">
-                  <p className="text-xs font-medium uppercase tracking-wider text-[#001A3D]/45">Total pay</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-[#001A3D]/45">Total pay (hours × profile rate)</p>
                   <p className="font-display mt-1 text-2xl font-semibold text-[#001A3D]">{currency(computedPay)}</p>
                 </div>
                 {addError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{addError}</p>}
               </div>
               <DialogFooter className="gap-2 sm:gap-0">
                 <Button type="button" variant="outline" className="rounded-full border-[#001A3D]/20" disabled={addLoading} onClick={() => setAddOpen(false)}>Cancel</Button>
-                <Button type="submit" className="rounded-full bg-[#FFB84D] font-semibold text-[#291800] hover:bg-[#f5a84a]" disabled={addLoading || !selectedTaskId || computedPay <= 0}>{addLoading ? "Saving…" : "Add payment"}</Button>
+                <Button
+                  type="submit"
+                  className="rounded-full bg-[#FFB84D] font-semibold text-[#291800] hover:bg-[#f5a84a]"
+                  disabled={
+                    addLoading ||
+                    !selectedTaskId ||
+                    computedPay <= 0 ||
+                    Number.isNaN(profileRate) ||
+                    profileRate <= 0
+                  }
+                >
+                  {addLoading ? "Saving…" : "Add payment"}
+                </Button>
               </DialogFooter>
             </form>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Pay Entry Dialog */}
-      <Dialog open={!!payingEntry} onOpenChange={(open) => { if (!open) setPayingEntry(null); }}>
-        <DialogContent className="max-w-[460px] rounded-2xl border-[#001A3D]/10 bg-white text-[#001A3D]">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">Mark as paid</DialogTitle>
-            <DialogDescription className="text-[#001A3D]/60">Set hours, rate, and amount, then confirm payment.</DialogDescription>
-          </DialogHeader>
-          {payingEntry && (
-            <div className="grid gap-4 py-2">
-              <div className="rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D]/70 space-y-1">
-                <p><span className="font-medium">Staff:</span> {one(payingEntry.profile)?.full_name ?? "—"}</p>
-                <p><span className="font-medium">Task:</span> {one(payingEntry.task)?.title ?? "—"}</p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="pay-d-hours">Hours</Label>
-                  <Input id="pay-d-hours" type="number" min="0.5" step="0.5" value={payHours} onChange={(e) => { setPayHours(e.target.value); setPayAmount(String((parseFloat(e.target.value) || 0) * (parseFloat(payRate) || 0))); }} className="rounded-xl border-[#001A3D]/15" disabled={payLoading} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pay-d-rate">Hourly rate (£)</Label>
-                  <Input id="pay-d-rate" type="number" min="0.01" step="0.01" value={payRate} onChange={(e) => { setPayRate(e.target.value); setPayAmount(String((parseFloat(payHours) || 0) * (parseFloat(e.target.value) || 0))); }} className="rounded-xl border-[#001A3D]/15" disabled={payLoading} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="pay-d-amount">Total amount (£)</Label>
-                <Input id="pay-d-amount" type="number" min="0.01" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="rounded-xl border-[#001A3D]/15 text-lg font-semibold" disabled={payLoading} />
-                <p className="text-xs text-[#001A3D]/40">Auto-calculated from hours × rate. Override if needed.</p>
-              </div>
-              {payError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{payError}</p>}
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" className="rounded-full border-[#001A3D]/20" disabled={payLoading} onClick={() => setPayingEntry(null)}>Cancel</Button>
-            <Button type="button" onClick={handleMarkPaid} className="rounded-full bg-emerald-600 font-semibold text-white hover:bg-emerald-700" disabled={payLoading || !payAmount || parseFloat(payAmount) <= 0}>
-              <DollarSign className="mr-1 h-4 w-4" />
-              {payLoading ? "Processing…" : `Pay ${payAmount ? currency(parseFloat(payAmount)) : ""}`}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -701,16 +680,24 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
           <p className="mt-2 text-sm text-[#001A3D]/55">
             Task-based payroll <span className="text-[#001A3D]/35">•</span>{" "}
             <span className="font-medium text-[#001A3D]/70">{entries.length}</span> entries
-            <span className="text-[#001A3D]/35"> • </span>
-            <span className="font-medium text-[#001A3D]/70">{batches.length}</span> batches
+            {isAdmin ? (
+              <>
+                <span className="text-[#001A3D]/35"> • </span>
+                <span className="font-medium text-[#001A3D]/70">{batches.length}</span> batches
+              </>
+            ) : (
+              <span className="text-[#001A3D]/45"> — your pay entries only</span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {tab === "entries" && (
             <>
-              <button type="button" onClick={() => exportCsv(filtered)} className="inline-flex h-11 items-center gap-2 rounded-3xl border border-[#001A3D]/15 bg-white px-5 text-sm font-semibold text-[#001A3D] shadow-[0_8px_24px_rgba(0,26,61,0.06)] transition hover:bg-[#f8f9fa]">
-                <Download className="h-4 w-4" strokeWidth={2} /> Export CSV
-              </button>
+              {isAdmin && (
+                <button type="button" onClick={() => exportCsv(filtered)} className="inline-flex h-11 items-center gap-2 rounded-3xl border border-[#001A3D]/15 bg-white px-5 text-sm font-semibold text-[#001A3D] shadow-[0_8px_24px_rgba(0,26,61,0.06)] transition hover:bg-[#f8f9fa]">
+                  <Download className="h-4 w-4" strokeWidth={2} /> Export CSV
+                </button>
+              )}
               {isAdmin && (
                 <button type="button" onClick={() => { resetModal(); setAddOpen(true); }} className="inline-flex h-11 items-center gap-2 rounded-3xl bg-[#FFB84D] px-5 text-sm font-semibold text-[#291800] shadow-[0_8px_24px_rgba(0,26,61,0.06)] transition hover:bg-[#f5a84a]">
                   <PlusCircle className="h-4 w-4" strokeWidth={2} /> Add Payment
@@ -727,21 +714,23 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       {/* ---- Tabs ---- */}
-      <div className="flex gap-1 rounded-2xl bg-[#f3f4f5] p-1">
+      <div className={`flex gap-1 rounded-2xl bg-[#f3f4f5] p-1 ${!isAdmin ? "max-w-md" : ""}`}>
         <button
           type="button"
           onClick={() => setTab("entries")}
-          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "entries" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
+          className={`${isAdmin ? "flex-1" : "w-full"} rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "entries" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
         >
           <Layers className="mr-2 inline h-4 w-4" /> Entries
         </button>
-        <button
-          type="button"
-          onClick={() => setTab("batches")}
-          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "batches" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
-        >
-          <FolderOpen className="mr-2 inline h-4 w-4" /> Batches
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setTab("batches")}
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "batches" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
+          >
+            <FolderOpen className="mr-2 inline h-4 w-4" /> Batches
+          </button>
+        )}
       </div>
 
       {/* ================================================================ */}
@@ -786,14 +775,17 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                         <th className="px-4 py-4">Rate</th>
                         <th className="px-4 py-4">Total pay</th>
                         <th className="px-4 py-4">Status</th>
-                        {isAdmin && <th className="px-4 py-4 text-right">Action</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {paginated.length === 0 ? (
                         <tr>
-                          <td colSpan={isAdmin ? 8 : 7} className="px-6 py-16 text-center text-sm text-[#001A3D]/50">
-                            {entries.length === 0 ? "No payroll entries yet. Approve tasks then click \"Add Payment\"." : "No entries match your filters."}
+                          <td colSpan={7} className="px-6 py-16 text-center text-sm text-[#001A3D]/50">
+                            {entries.length === 0
+                              ? isAdmin
+                                ? "No payroll entries yet. Approve tasks, then use Add payment."
+                                : "No payroll entries for you yet."
+                              : "No entries match your filters."}
                           </td>
                         </tr>
                       ) : (
@@ -801,6 +793,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                           const person = one(row.profile);
                           const task = one(row.task);
                           const isPaid = row.status === "paid";
+                          const lineTotal = Number(row.hours) * Number(row.hourly_rate);
                           return (
                             <tr key={row.id} className="transition-colors hover:bg-[#f8f9fa]/90">
                               <td className="px-6 py-4 align-middle">
@@ -822,24 +815,38 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                               </td>
                               <td className="px-4 py-4 align-middle text-sm font-medium text-[#001A3D]/80">{Number(row.hours).toFixed(1)}</td>
                               <td className="px-4 py-4 align-middle text-sm text-[#001A3D]/80">{currency(Number(row.hourly_rate))}</td>
-                              <td className="px-4 py-4 align-middle text-sm font-semibold text-[#001A3D]">{currency(Number(row.total_pay))}</td>
+                              <td className="px-4 py-4 align-middle text-sm font-semibold text-[#001A3D]">{currency(lineTotal)}</td>
                               <td className="px-4 py-4 align-middle">
-                                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${isPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                                  {isPaid ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                                  {isPaid ? "Paid" : "Unpaid"}
-                                </span>
+                                {isAdmin ? (
+                                  <button
+                                    type="button"
+                                    disabled={togglingId === row.id}
+                                    onClick={() => (isPaid ? markUnpaid(row) : markPaid(row))}
+                                    title={isPaid ? "Click to mark as unpaid" : "Click to mark as paid"}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB84D]/50 disabled:opacity-50 ${
+                                      isPaid
+                                        ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
+                                        : "bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer"
+                                    }`}
+                                  >
+                                    {togglingId === row.id ? (
+                                      <span className="inline-block h-3.5 w-8 animate-pulse text-center">…</span>
+                                    ) : (
+                                      <>
+                                        {isPaid ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                                        {isPaid ? "Paid" : "Unpaid"}
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${isPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                                  >
+                                    {isPaid ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                                    {isPaid ? "Paid" : "Unpaid"}
+                                  </span>
+                                )}
                               </td>
-                              {isAdmin && (
-                                <td className="px-4 py-4 align-middle text-right">
-                                  {!isPaid ? (
-                                    <button type="button" onClick={() => openPayDialog(row)} className="inline-flex items-center gap-1.5 rounded-xl bg-[#001A3D] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#001A3D]/90">
-                                      <DollarSign className="h-3.5 w-3.5" /> Pay
-                                    </button>
-                                  ) : (
-                                    <button type="button" disabled={togglingId === row.id} onClick={() => markUnpaid(row)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#001A3D]/15 bg-white px-4 py-2 text-xs font-medium text-[#001A3D]/60 transition hover:bg-[#f3f4f5]">Undo</button>
-                                  )}
-                                </td>
-                              )}
                             </tr>
                           );
                         })
@@ -891,33 +898,41 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
               </div>
             </div>
 
-            <div className="curator-card p-5 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#001A3D]/70">
-                <TrendingUp className="h-4 w-4 text-[#4DB8FF]" /> Top earners
+            {isAdmin && (
+              <div className="curator-card p-5 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#001A3D]/70">
+                  <TrendingUp className="h-4 w-4 text-[#4DB8FF]" /> Top earners
+                </div>
+                <div className="mt-3 space-y-3">
+                  {(() => {
+                    const byStaff = new Map<string, { name: string; total: number }>();
+                    for (const row of entries) {
+                      const p = one(row.profile);
+                      const sid = p?.id ?? "unknown";
+                      const existing = byStaff.get(sid);
+                      const line = Number(row.hours) * Number(row.hourly_rate);
+                      if (existing) existing.total += line;
+                      else byStaff.set(sid, { name: p?.full_name ?? "Unknown", total: line });
+                    }
+                    return Array.from(byStaff.values())
+                      .sort((a, b) => b.total - a.total)
+                      .slice(0, 5)
+                      .map((s, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#FFB84D]/20 text-[10px] font-bold text-[#291800]">
+                              {i + 1}
+                            </span>
+                            <p className="truncate text-sm text-[#001A3D]">{s.name}</p>
+                          </div>
+                          <p className="shrink-0 text-sm font-semibold text-[#001A3D]">{currency(s.total)}</p>
+                        </div>
+                      ));
+                  })()}
+                  {entries.length === 0 && <p className="text-xs text-[#001A3D]/40">No data yet.</p>}
+                </div>
               </div>
-              <div className="mt-3 space-y-3">
-                {(() => {
-                  const byStaff = new Map<string, { name: string; total: number }>();
-                  for (const row of entries) {
-                    const p = one(row.profile);
-                    const sid = p?.id ?? "unknown";
-                    const existing = byStaff.get(sid);
-                    if (existing) existing.total += Number(row.total_pay);
-                    else byStaff.set(sid, { name: p?.full_name ?? "Unknown", total: Number(row.total_pay) });
-                  }
-                  return Array.from(byStaff.values()).sort((a, b) => b.total - a.total).slice(0, 5).map((s, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#FFB84D]/20 text-[10px] font-bold text-[#291800]">{i + 1}</span>
-                        <p className="truncate text-sm text-[#001A3D]">{s.name}</p>
-                      </div>
-                      <p className="shrink-0 text-sm font-semibold text-[#001A3D]">{currency(s.total)}</p>
-                    </div>
-                  ));
-                })()}
-                {entries.length === 0 && <p className="text-xs text-[#001A3D]/40">No data yet.</p>}
-              </div>
-            </div>
+            )}
           </aside>
         </div>
       )}

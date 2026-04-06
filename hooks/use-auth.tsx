@@ -27,7 +27,10 @@ type AuthProfile = {
   phone?: string | null;
   emergency_contact?: string | null;
   branch_id?: string | null;
-  profile_picture?: string | null;
+  avatar_path?: string | null;
+  hourly_rate?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 type LoginInput = {
@@ -60,7 +63,9 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
   const result = await Promise.race([
     supabase
       .from("profiles")
-      .select("id, email, full_name, role, branch, department, phone, emergency_contact")
+      .select(
+        "id, email, full_name, role, branch, department, phone, emergency_contact, avatar_path, hourly_rate, created_at, updated_at"
+      )
       .eq("id", userId)
       .maybeSingle(),
     new Promise<{ data: null; error: { message: string } }>((resolve) =>
@@ -77,6 +82,13 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
 
   if (!data) return null;
 
+  const row = data as {
+    avatar_path?: string | null;
+    hourly_rate?: number | string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+  };
+
   return {
     id: data.id,
     email: data.email ?? null,
@@ -87,7 +99,11 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
     phone: data.phone ?? null,
     emergency_contact: data.emergency_contact ?? null,
     branch_id: null,
-    profile_picture: null,
+    avatar_path: row.avatar_path ?? null,
+    hourly_rate:
+      row.hourly_rate != null ? Number(row.hourly_rate) : null,
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
   };
 }
 
@@ -133,7 +149,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone: null,
           emergency_contact: null,
           branch_id: null,
-          profile_picture: null,
+          avatar_path: null,
+          hourly_rate: null,
+          created_at: null,
+          updated_at: null,
         }
       );
     } catch (error) {
@@ -161,7 +180,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       phone: null,
       emergency_contact: null,
       branch_id: null,
-      profile_picture: null,
+      avatar_path: null,
+      hourly_rate: null,
+      created_at: null,
+      updated_at: null,
     });
 
     const bootstrap = async () => {
@@ -286,7 +308,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             phone: null,
             emergency_contact: null,
             branch_id: null,
-            profile_picture: null,
+            avatar_path: null,
+            hourly_rate: null,
+            created_at: null,
+            updated_at: null,
           }
         );
         setLoading(false);
@@ -328,20 +353,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const supabase = createClient();
 
-        const payload = {
-          full_name: updates.full_name,
-          role: updates.role,
-          branch: updates.branch,
-          department: updates.department,
-          phone: updates.phone,
-          emergency_contact: updates.emergency_contact,
-        };
+        const payload = Object.fromEntries(
+          Object.entries({
+            full_name: updates.full_name,
+            role: updates.role,
+            branch: updates.branch,
+            department: updates.department,
+            phone: updates.phone,
+            emergency_contact: updates.emergency_contact,
+            avatar_path: updates.avatar_path,
+          }).filter(([, v]) => v !== undefined)
+        );
 
         const { data, error } = await supabase
           .from("profiles")
           .update(payload)
           .eq("id", user.id)
-          .select("id, email, full_name, role, branch, department, phone, emergency_contact")
+          .select(
+            "id, email, full_name, role, branch, department, phone, emergency_contact, avatar_path, hourly_rate, created_at, updated_at"
+          )
           .maybeSingle();
 
         if (error) {
@@ -349,6 +379,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (data) {
+          const row = data as {
+            created_at?: string | null;
+            updated_at?: string | null;
+          };
           setProfile({
             id: data.id,
             email: data.email ?? user.email ?? null,
@@ -359,7 +393,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             phone: data.phone ?? null,
             emergency_contact: data.emergency_contact ?? null,
             branch_id: null,
-            profile_picture: null,
+            avatar_path: data.avatar_path ?? null,
+            hourly_rate:
+              data.hourly_rate != null && !Number.isNaN(Number(data.hourly_rate))
+                ? Number(data.hourly_rate)
+                : null,
+            created_at: row.created_at ?? null,
+            updated_at: row.updated_at ?? null,
           });
         }
 

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
 import { isExecutiveTeam, isBranchLead, isMentor } from "@/lib/utils/permissions"
+import { getAvatarUrl } from "@/lib/utils/avatar"
 import {
   LayoutDashboard,
   Users,
@@ -16,7 +17,6 @@ import {
   Wallet,
   FileText,
   Megaphone,
-  UserCog,
   Settings,
   Plus,
   LogOut,
@@ -38,10 +38,9 @@ const navigation: NavItem[] = [
   { name: "My Profile", href: "/profile", icon: UserCircle, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Requests", href: "/requests", icon: ClipboardList, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Task Board", href: "/tasks", icon: ListTodo, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
-  { name: "Payroll", href: "/payroll", icon: Wallet, allowedFor: ["executive", "branchLead"] },
+  { name: "Payroll", href: "/payroll", icon: Wallet, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Documents", href: "/documents", icon: FileText, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Announcements", href: "/announcements", icon: Megaphone, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
-  { name: "User Management", href: "/admin/users", icon: UserCog, allowedFor: ["executive"] },
   { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["executive"] },
 ]
 
@@ -127,10 +126,18 @@ export function Sidebar() {
           </Link>
 
           <div
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white ring-1 ring-white/20"
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/10 text-sm font-semibold text-white ring-1 ring-white/20"
             title={profile?.full_name || user?.email || "Account"}
           >
-            {profile?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || "?"}
+            {getAvatarUrl(profile?.avatar_path) ? (
+              <img
+                src={getAvatarUrl(profile?.avatar_path)!}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              profile?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || "?"
+            )}
           </div>
 
           <button

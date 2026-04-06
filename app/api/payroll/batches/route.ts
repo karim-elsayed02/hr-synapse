@@ -32,7 +32,7 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin" && role !== "branch_lead" && role !== "sub_branch_lead") {
+    if (role !== "admin") {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
@@ -190,15 +190,28 @@ export async function PATCH(request: NextRequest) {
 
       const now = new Date().toISOString();
 
-      const { error: entryErr } = await supabase
+      const { data: toProcess, error: listErr } = await supabase
         .from("payroll_entries")
-        .update({ status: "paid", paid_at: now })
+        .select("id, hours, hourly_rate")
         .eq("payroll_batch_id", batch_id)
         .eq("status", "unpaid");
 
-      if (entryErr) {
-        console.error("Process batch entries failed:", entryErr);
-        return NextResponse.json({ error: entryErr.message }, { status: 400 });
+      if (listErr) {
+        console.error("Process batch list failed:", listErr);
+        return NextResponse.json({ error: listErr.message }, { status: 400 });
+      }
+
+      for (const e of toProcess ?? []) {
+        const total_pay = Number(e.hours) * Number(e.hourly_rate);
+        const { error: upErr } = await supabase
+          .from("payroll_entries")
+          .update({ status: "paid", paid_at: now, total_pay })
+          .eq("id", e.id);
+
+        if (upErr) {
+          console.error("Process batch entry failed:", upErr);
+          return NextResponse.json({ error: upErr.message }, { status: 400 });
+        }
       }
 
       const { error: batchErr } = await supabase

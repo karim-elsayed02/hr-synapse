@@ -39,7 +39,12 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("requests")
-    .select("*")
+    .select(
+      `
+      *,
+      profiles!requests_profile_id_fkey(full_name, email)
+    `
+    )
     .eq("profile_id", user.id)
     .order("created_at", { ascending: false })
 

@@ -27,7 +27,7 @@ export function QuickActions() {
       title: "Add Staff Member",
       description: "Register a new team member",
       icon: Users,
-      href: "/staff/new",
+      href: "/staff?addStaff=1",
       roles: ["admin", "manager"],
     },
     {
