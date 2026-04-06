@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers"
 import { createServerClient } from "@supabase/ssr"
+import { notifyRequestReceived, notifyRequestDecision } from "@/lib/notifications"
 
 const getSupabaseClient = () => {
   const cookieStore = cookies()
@@ -117,6 +118,21 @@ export async function createRequestAction(requestData: any) {
       return { success: false, error: `Database error: ${error.message}` }
     }
 
+    if (data && requestData.sendTo) {
+      const { data: requester } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", userId)
+        .single();
+
+      await notifyRequestReceived(supabase, {
+        lineManagerId: requestData.sendTo,
+        requestId: data.id,
+        requestTitle: requestData.title ?? "Untitled request",
+        requesterName: requester?.full_name ?? "A staff member",
+      }).catch(() => {});
+    }
+
     return { success: true, data }
   } catch (error) {
     console.error("[v0] Unexpected error:", error)
@@ -163,13 +179,22 @@ export async function approveRequestAction(requestId: string, approved: boolean,
     .from("requests")
     .update(updateData)
     .eq("id", requestId)
-    .eq("line_manager_id", userId) // Ensure only line manager can approve
+    .eq("line_manager_id", userId)
     .select()
     .single()
 
   if (error) {
     console.log("[v0] Error approving request:", error)
     throw new Error("Failed to approve request")
+  }
+
+  if (data) {
+    await notifyRequestDecision(supabase, {
+      requesterId: data.profile_id,
+      requestId: data.id,
+      requestTitle: data.title ?? "Untitled request",
+      approved,
+    }).catch(() => {});
   }
 
   return data

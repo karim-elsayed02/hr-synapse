@@ -54,6 +54,7 @@ export async function GET() {
     recentRequestsRes,
     recentTasksRes,
     recentDocsRes,
+    branchTasksRes,
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("tasks").select("id", { count: "exact", head: true }).eq("status", "open"),
@@ -80,6 +81,9 @@ export async function GET() {
       .select("id, title, created_at, user_id")
       .order("created_at", { ascending: false })
       .limit(5),
+    supabase
+      .from("tasks")
+      .select("id, status, branch:branches(id, name)"),
   ]);
 
   const totalStaff = profilesCountRes.error ? 0 : profilesCountRes.count ?? 0;
@@ -164,6 +168,24 @@ export async function GET() {
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 6);
 
+  const branchTasks = branchTasksRes.error ? [] : (branchTasksRes.data ?? []) as {
+    id: string;
+    status: string;
+    branch: { id: string; name: string } | { id: string; name: string }[] | null;
+  }[];
+
+  const branchCompletedMap = new Map<string, number>();
+  for (const t of branchTasks) {
+    if (t.status !== "completed" && t.status !== "approved") continue;
+    const branchRel = Array.isArray(t.branch) ? t.branch[0] : t.branch;
+    const branchName = branchRel?.name ?? "Unassigned";
+    branchCompletedMap.set(branchName, (branchCompletedMap.get(branchName) ?? 0) + 1);
+  }
+
+  const tasksByBranch = Array.from(branchCompletedMap.entries())
+    .map(([branch, completed]) => ({ branch, completed }))
+    .sort((a, b) => b.completed - a.completed);
+
   return NextResponse.json({
     stats: {
       totalStaff,
@@ -172,5 +194,6 @@ export async function GET() {
       tasksCompleted,
     },
     activities,
+    tasksByBranch,
   });
 }

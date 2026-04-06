@@ -19,6 +19,11 @@ type ActivityItem = {
   status?: string;
 };
 
+type BranchTaskCount = {
+  branch: string;
+  completed: number;
+};
+
 type DashboardData = {
   stats: {
     totalStaff: number;
@@ -27,6 +32,7 @@ type DashboardData = {
     tasksCompleted: number;
   };
   activities: ActivityItem[];
+  tasksByBranch: BranchTaskCount[];
 };
 
 export default function DashboardPage() {
@@ -39,6 +45,7 @@ export default function DashboardPage() {
       tasksCompleted: 0,
     },
     activities: [],
+    tasksByBranch: [],
   });
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -79,6 +86,7 @@ export default function DashboardPage() {
               tasksCompleted: Number(body.stats?.tasksCompleted) || 0,
             },
             activities: Array.isArray(body.activities) ? body.activities : [],
+            tasksByBranch: Array.isArray(body.tasksByBranch) ? body.tasksByBranch : [],
           });
         }
       } catch (error) {
@@ -157,40 +165,44 @@ export default function DashboardPage() {
         <div className="curator-card p-6 xl:col-span-2">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="font-display text-lg font-semibold text-[#001A3D]">Efficiency overview</h2>
-              <p className="text-sm text-[#001A3D]/50">Weekly rhythm (illustrative)</p>
-            </div>
-            <div className="mt-2 flex gap-1 rounded-full bg-[#f3f4f5] p-1 sm:mt-0">
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-[#001A3D] shadow-sm">
-                Weekly
-              </span>
-              <span className="rounded-full px-3 py-1 text-xs font-medium text-[#001A3D]/45">Monthly</span>
+              <h2 className="font-display text-lg font-semibold text-[#001A3D]">Tasks completed</h2>
+              <p className="text-sm text-[#001A3D]/50">Completed tasks per branch</p>
             </div>
           </div>
-          <div className="mt-8 flex h-44 items-end justify-between gap-2 px-1">
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => {
-              const heightsPx = [52, 72, 112, 60, 64, 120, 44];
-              const active = i === 2 || i === 5;
-              const h = heightsPx[i];
-              return (
-                <div key={d} className="flex min-h-0 flex-1 flex-col items-center justify-end gap-2">
-                  <div
-                    className="w-full max-w-[2.75rem] rounded-t-lg transition-colors"
-                    style={{
-                      height: h,
-                      minHeight: 24,
-                      background: active
-                        ? "linear-gradient(180deg, #001A3D 0%, #011b3e 100%)"
-                        : "rgba(0, 26, 61, 0.08)",
-                    }}
-                  />
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-[#001A3D]/40">
-                    {d}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+
+          {dashboardData.tasksByBranch.length === 0 ? (
+            <div className="mt-8 flex h-44 items-center justify-center">
+              <p className="text-sm text-[#001A3D]/40">No task data available</p>
+            </div>
+          ) : (
+            <div className="mt-8 flex h-44 items-end justify-between gap-2 px-1">
+              {(() => {
+                const maxCompleted = Math.max(...dashboardData.tasksByBranch.map((b) => b.completed), 1);
+                return dashboardData.tasksByBranch.map((b, i) => {
+                  const h = Math.max(24, Math.round((b.completed / maxCompleted) * 160));
+                  const isTop = b.completed === maxCompleted;
+                  return (
+                    <div key={b.branch} className="flex min-h-0 flex-1 flex-col items-center justify-end gap-2">
+                      <span className="text-xs font-semibold text-[#001A3D]/70">{b.completed}</span>
+                      <div
+                        className="w-full max-w-[2.75rem] rounded-t-lg transition-all"
+                        style={{
+                          height: h,
+                          minHeight: 24,
+                          background: isTop
+                            ? "linear-gradient(180deg, #001A3D 0%, #011b3e 100%)"
+                            : "rgba(0, 26, 61, 0.08)",
+                        }}
+                      />
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-[#001A3D]/40">
+                        {b.branch}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-[#001A3D] to-[#011b3e] p-6 text-white shadow-[0_8px_24px_rgba(0,26,61,0.15)]">

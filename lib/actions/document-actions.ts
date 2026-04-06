@@ -2,6 +2,7 @@
 
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { notifyDocumentUploaded, notifyDocumentUpdated } from "@/lib/notifications"
 
 const createAuthenticatedSupabaseClient = async () => {
   const cookieStore = cookies()
@@ -118,6 +119,15 @@ export async function uploadDocumentAction(documentData: any) {
   }
 
   console.log("[v0] Document uploaded successfully:", document.id)
+
+  if (documentData.targetUserId && documentData.targetUserId !== user.id) {
+    await notifyDocumentUploaded(supabase, {
+      targetUserId: documentData.targetUserId,
+      documentId: String(document.id),
+      documentTitle: documentData.title,
+    }).catch(() => {});
+  }
+
   return document
 }
 
@@ -150,5 +160,15 @@ export async function updateDocumentAction(documentId: number, documentData: any
   }
 
   console.log("[v0] Document updated successfully:", updatedDocument.id)
+
+  const targetUser = documentData.targetUserId || updatedDocument.target_user_id;
+  if (targetUser && targetUser !== user.id) {
+    await notifyDocumentUpdated(supabase, {
+      targetUserId: targetUser,
+      documentId: String(updatedDocument.id),
+      documentTitle: documentData.title ?? updatedDocument.title,
+    }).catch(() => {});
+  }
+
   return updatedDocument
 }

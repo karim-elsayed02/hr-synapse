@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isManagerLikeRole } from "@/lib/utils/permissions";
+import {
+  notifyTaskAssigned,
+  notifyTaskAwaitingApproval,
+  notifyTaskApproved,
+} from "@/lib/notifications";
 
 type TaskStatus =
   | "open"
@@ -337,6 +342,18 @@ export async function assignTaskToUser(formData: FormData) {
 
   if (error) throw new Error(error.message);
 
+  const { data: taskRow } = await supabase
+    .from("tasks")
+    .select("title")
+    .eq("id", taskId)
+    .single();
+
+  await notifyTaskAssigned(supabase, {
+    assigneeId,
+    taskId,
+    taskTitle: taskRow?.title ?? "Untitled task",
+  }).catch(() => {});
+
   revalidatePath("/tasks");
 }
 
@@ -407,6 +424,12 @@ export async function markTaskCompleted(formData: FormData) {
 
   if (!taskId) throw new Error("Missing taskId");
 
+  const { data: taskRow } = await supabase
+    .from("tasks")
+    .select("title, branch_id, sub_branch_id")
+    .eq("id", taskId)
+    .single();
+
   const { error } = await supabase
     .from("tasks")
     .update({
@@ -418,6 +441,13 @@ export async function markTaskCompleted(formData: FormData) {
     .eq("status", "in_progress");
 
   if (error) throw new Error(error.message);
+
+  await notifyTaskAwaitingApproval(supabase, {
+    taskId,
+    taskTitle: taskRow?.title ?? "Untitled task",
+    branchId: taskRow?.branch_id ?? null,
+    subBranchId: taskRow?.sub_branch_id ?? null,
+  }).catch(() => {});
 
   revalidatePath("/tasks");
 }
@@ -432,6 +462,12 @@ export async function approveTask(formData: FormData) {
     throw new Error("Only admins can approve tasks");
   }
 
+  const { data: taskRow } = await supabase
+    .from("tasks")
+    .select("title, claimed_by")
+    .eq("id", taskId)
+    .single();
+
   const { error } = await supabase
     .from("tasks")
     .update({
@@ -442,6 +478,14 @@ export async function approveTask(formData: FormData) {
     .eq("status", "completed");
 
   if (error) throw new Error(error.message);
+
+  if (taskRow?.claimed_by) {
+    await notifyTaskApproved(supabase, {
+      userId: taskRow.claimed_by,
+      taskId,
+      taskTitle: taskRow.title ?? "Untitled task",
+    }).catch(() => {});
+  }
 
   revalidatePath("/tasks");
   revalidatePath("/payroll");

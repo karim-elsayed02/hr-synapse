@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notifyPayEntryPaid } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -192,7 +193,7 @@ export async function PATCH(request: NextRequest) {
 
       const { data: toProcess, error: listErr } = await supabase
         .from("payroll_entries")
-        .select("id, hours, hourly_rate")
+        .select("id, hours, hourly_rate, profile_id")
         .eq("payroll_batch_id", batch_id)
         .eq("status", "unpaid");
 
@@ -211,6 +212,14 @@ export async function PATCH(request: NextRequest) {
         if (upErr) {
           console.error("Process batch entry failed:", upErr);
           return NextResponse.json({ error: upErr.message }, { status: 400 });
+        }
+
+        if (e.profile_id) {
+          notifyPayEntryPaid(supabase, {
+            userId: e.profile_id,
+            entryId: e.id,
+            amount: total_pay,
+          }).catch(() => {});
         }
       }
 

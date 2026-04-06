@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { notifyPayEntryCreated, notifyPayEntryPaid } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -221,6 +222,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (data?.id) {
+      const { data: taskInfo } = await supabase
+        .from("tasks")
+        .select("title")
+        .eq("id", task_id)
+        .single();
+      const { data: staffInfo } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", task.claimed_by)
+        .single();
+
+      notifyPayEntryCreated(supabase, {
+        entryId: data.id,
+        taskTitle: taskInfo?.title ?? "Untitled task",
+        staffName: staffInfo?.full_name ?? "Unknown",
+      }).catch(() => {});
+    }
+
     return NextResponse.json({ success: true, id: data?.id });
   } catch (err) {
     console.error("POST /api/payroll unexpected:", err);
@@ -285,6 +305,14 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       console.error("PATCH /api/payroll failed:", error);
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (newStatus === "paid" && existing.profile_id) {
+      notifyPayEntryPaid(supabase, {
+        userId: existing.profile_id,
+        entryId: id,
+        amount: computedTotal,
+      }).catch(() => {});
     }
 
     return NextResponse.json({ success: true });
