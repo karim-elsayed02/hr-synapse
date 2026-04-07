@@ -11,7 +11,8 @@ import {
   MoreHorizontal,
   UserPlus,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getAvatarUrl } from "@/lib/utils/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -322,8 +323,16 @@ export default function StaffDirectoryClient({
     setLoading(true);
     setAddStaffError(null);
     const email = addStaffForm.email.trim();
-    if (!addStaffForm.branch?.trim() || !addStaffForm.department?.trim()) {
-      setAddStaffError("Please select a branch and sub-branch.");
+    if (!addStaffForm.branch?.trim()) {
+      setAddStaffError("Please select a branch.");
+      setLoading(false);
+      return;
+    }
+    if (
+      addStaffForm.branch !== "tutoring" &&
+      !addStaffForm.department?.trim()
+    ) {
+      setAddStaffError("Please select a sub-branch.");
       setLoading(false);
       return;
     }
@@ -578,10 +587,17 @@ export default function StaffDirectoryClient({
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="add-dept">Sub-branch</Label>
+                    <Label htmlFor="add-dept">
+                      Sub-branch
+                      {addStaffForm.branch === "tutoring" ? (
+                        <span className="ml-1 font-normal text-[#001A3D]/45">
+                          (optional)
+                        </span>
+                      ) : null}
+                    </Label>
                     <select
                       id="add-dept"
-                      required
+                      required={addStaffForm.branch !== "tutoring"}
                       value={addStaffForm.department ?? ""}
                       onChange={(e) =>
                         setAddStaffForm((p) => ({ ...p, department: e.target.value }))
@@ -855,6 +871,7 @@ export default function StaffDirectoryClient({
                   ) : (
                     paginatedStaff.map((person) => {
                       const syn = syntheticStaffId(person.id);
+                      const avatarSrc = getAvatarUrl(person.avatar_path);
 
                       return (
                         <tr
@@ -864,6 +881,9 @@ export default function StaffDirectoryClient({
                           <td className="px-6 py-4 align-middle">
                             <div className="flex items-center gap-3">
                               <Avatar className="h-11 w-11 ring-2 ring-white shadow-sm">
+                                {avatarSrc ? (
+                                  <AvatarImage src={avatarSrc} alt="" />
+                                ) : null}
                                 <AvatarFallback className="bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-xs font-semibold text-[#FFB84D]">
                                   {initials(person.full_name)}
                                 </AvatarFallback>

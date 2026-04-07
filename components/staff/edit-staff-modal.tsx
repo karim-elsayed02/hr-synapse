@@ -87,8 +87,12 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.branch?.trim() || !form.department?.trim()) {
-      setError("Please select a branch and sub-branch.");
+    if (!form.branch?.trim()) {
+      setError("Please select a branch.");
+      return;
+    }
+    if (form.branch !== "tutoring" && !form.department?.trim()) {
+      setError("Please select a sub-branch.");
       return;
     }
     setLoading(true);
@@ -190,10 +194,17 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-dept">Sub-branch</Label>
+                <Label htmlFor="edit-dept">
+                  Sub-branch
+                  {form.branch === "tutoring" ? (
+                    <span className="ml-1 font-normal text-[#001A3D]/45">
+                      (optional)
+                    </span>
+                  ) : null}
+                </Label>
                 <select
                   id="edit-dept"
-                  required
+                  required={form.branch !== "tutoring"}
                   value={form.department ?? ""}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, department: e.target.value }))

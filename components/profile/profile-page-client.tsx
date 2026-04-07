@@ -27,6 +27,9 @@ import {
   Building2,
   ArrowLeft,
   Upload,
+  FileText,
+  Download,
+  CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { createBrowserClient } from "@supabase/ssr";
@@ -119,7 +122,39 @@ function hourlyToInput(v: number | string | null | undefined) {
   return String(n);
 }
 
-type SectionId = "general" | "contact" | "org" | "security";
+type SectionId = "general" | "contact" | "org" | "documents" | "security";
+
+type DocumentRow = {
+  id: number;
+  document_title: string;
+  document_type: string;
+  description: string | null;
+  expiry_date: string | null;
+  file_name: string | null;
+  file_size: number | null;
+  created_at: string;
+  download_url: string | null;
+};
+
+function formatBytes(bytes: number | null) {
+  if (!bytes) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatShortDate(iso: string | null) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
 
 export function ProfilePageClient({ profileId }: { profileId?: string }) {
   const { user, profile: authProfile, loading: authLoading, isAdmin, refreshSession } =
@@ -150,6 +185,9 @@ export function ProfilePageClient({ profileId }: { profileId?: string }) {
   const [pwdLoading, setPwdLoading] = useState(false);
 
   const [hourlyRateInput, setHourlyRateInput] = useState("");
+
+  const [userDocs, setUserDocs] = useState<DocumentRow[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
 
   const resolvedId = profileId ?? user?.id ?? null;
   const isOwn = !!(user && resolvedId && resolvedId === user.id);
@@ -220,6 +258,20 @@ export function ProfilePageClient({ profileId }: { profileId?: string }) {
     loadOtherUserProfile,
     applyFormFromPublic,
   ]);
+
+  useEffect(() => {
+    if (authLoading || !user || !resolvedId) return;
+    const canView = resolvedId === user.id || authProfile?.role === "admin";
+    if (!canView) return;
+
+    setDocsLoading(true);
+    const qp = resolvedId !== user.id ? `?user_id=${resolvedId}` : "";
+    fetch(`/api/documents${qp}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setUserDocs(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setDocsLoading(false));
+  }, [authLoading, user, resolvedId, authProfile?.role]);
 
   const displayName = useMemo(() => {
     return data?.full_name?.trim() || user?.email?.split("@")[0] || "Member";
@@ -497,6 +549,7 @@ export function ProfilePageClient({ profileId }: { profileId?: string }) {
               {navBtn("general", "General information")}
               {navBtn("contact", "Contact details")}
               {navBtn("org", "Organisation")}
+              {navBtn("documents", "Documents")}
               {isOwn && navBtn("security", "Security")}
             </nav>
           </div>
@@ -655,6 +708,57 @@ export function ProfilePageClient({ profileId }: { profileId?: string }) {
               </div>
               <p className="text-xs text-[#001A3D]/40">Branch and sub-branch are assigned by administrators.</p>
             </div>
+          </section>
+
+          <section id="profile-section-documents" className="curator-card p-6 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
+            <div className="mb-6 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-[#4DB8FF]" />
+              <h2 className="font-display text-lg font-semibold text-[#001A3D]">Documents</h2>
+            </div>
+
+            {docsLoading ? (
+              <div className="flex h-28 items-center justify-center">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#001A3D]/20 border-t-[#FFB84D]" />
+              </div>
+            ) : userDocs.length === 0 ? (
+              <p className="rounded-xl bg-[#f8f9fa] px-4 py-8 text-center text-sm text-[#001A3D]/45">
+                No documents uploaded yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-[#001A3D]/[0.05]">
+                {userDocs.map((doc) => (
+                  <div key={doc.id} className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0">
+                    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#FFB84D]/15 text-[#b47a1a]">
+                      <FileText className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-[#001A3D]">{doc.document_title}</p>
+                      <p className="mt-0.5 text-xs text-[#001A3D]/50">
+                        {doc.document_type}
+                        {doc.file_size ? ` · ${formatBytes(doc.file_size)}` : ""}
+                        {doc.expiry_date && (
+                          <span className="ml-2 inline-flex items-center gap-0.5">
+                            <CalendarDays className="inline h-3 w-3" />
+                            {formatShortDate(doc.expiry_date)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    {doc.download_url && (
+                      <a
+                        href={doc.download_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[#001A3D]/50 hover:bg-[#f3f4f5] hover:text-[#001A3D]"
+                        title="Download"
+                      >
+                        <Download className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           {isOwn && (

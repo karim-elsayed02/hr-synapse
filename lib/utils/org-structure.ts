@@ -3,7 +3,13 @@
  * Stored values are lowercase slugs; use formatters for display.
  */
 
-export const BRANCH_SLUGS = ["medical", "dental", "executives", "tutoring"] as const;
+export const BRANCH_SLUGS = [
+  "medical",
+  "dental",
+  "executives",
+  "tutoring",
+  "social_media",
+] as const;
 export type BranchSlug = (typeof BRANCH_SLUGS)[number];
 
 export const SUB_BRANCH_SLUGS = [
@@ -22,6 +28,7 @@ export const BRANCH_LABELS: Record<BranchSlug, string> = {
   dental: "Dental",
   executives: "Executives",
   tutoring: "Tutoring",
+  social_media: "Social media",
 };
 
 export const SUB_BRANCH_LABELS: Record<SubBranchSlug, string> = {
@@ -38,6 +45,8 @@ const BRANCH_ALIASES: Record<string, BranchSlug> = {
   executive: "executives",
   executives: "executives",
   tutoring: "tutoring",
+  social_media: "social_media",
+  socialmedia: "social_media",
 };
 
 const SUB_BRANCH_ALIASES: Record<string, SubBranchSlug> = {
@@ -123,6 +132,14 @@ export function validateProfileBranchDept(
     return {
       ok: false,
       error: `Invalid sub-branch. Choose one of: ${SUB_BRANCH_SLUGS.join(", ")}`,
+    };
+  }
+
+  // Tutoring may omit sub-branch; other branches require one when a branch is set.
+  if (branch && branch !== "tutoring" && !department) {
+    return {
+      ok: false,
+      error: "Sub-branch is required for this branch.",
     };
   }
 

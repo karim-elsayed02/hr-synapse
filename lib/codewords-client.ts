@@ -1,7 +1,7 @@
 import { getUsersAction, createUserAction, updateUserAction } from "@/lib/actions/user-actions"
 import { getTasksAction, createTaskAction, updateTaskAction } from "@/lib/actions/task-actions"
 import { getRequestsAction, createRequestAction, updateRequestAction } from "@/lib/actions/request-actions"
-import { getDocumentsAction, uploadDocumentAction, updateDocumentAction } from "@/lib/actions/document-actions"
+import { getDocumentsAction } from "@/lib/actions/document-actions"
 import {
   getAnnouncementsAction,
   createAnnouncementAction,
@@ -29,8 +29,6 @@ export const useCodeWords = () => {
 
     // Document methods
     getDocuments: getDocumentsAction,
-    uploadDocument: uploadDocumentAction,
-    updateDocument: updateDocumentAction,
 
     // Announcement methods
     getAnnouncements: getAnnouncementsAction,

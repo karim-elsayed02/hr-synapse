@@ -54,6 +54,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   pay_entry_paid: CreditCard,
   document_uploaded: File,
   document_updated: File,
+  document_expiring_soon: File,
 }
 
 const ENTITY_ROUTES: Record<string, string> = {

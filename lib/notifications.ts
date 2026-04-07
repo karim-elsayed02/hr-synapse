@@ -10,7 +10,8 @@ export type NotificationType =
   | "pay_entry_created"
   | "pay_entry_paid"
   | "document_uploaded"
-  | "document_updated";
+  | "document_updated"
+  | "document_expiring_soon";
 
 interface NotificationPayload {
   user_id: string;
