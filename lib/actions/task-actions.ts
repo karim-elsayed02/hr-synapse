@@ -30,7 +30,7 @@ async function requireUser() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, branch")
     .eq("id", user.id)
     .single();
 
@@ -486,6 +486,41 @@ export async function approveTask(formData: FormData) {
       taskTitle: taskRow.title ?? "Untitled task",
     }).catch(() => {});
   }
+
+  revalidatePath("/tasks");
+  revalidatePath("/payroll");
+}
+
+/** Admins: any task. Branch leads: tasks in their branch (or with no branch). */
+export async function deleteTask(formData: FormData) {
+  const { supabase, profile } = await requireUser();
+  const taskId = String(formData.get("taskId") ?? "").trim();
+  if (!taskId) throw new Error("Missing taskId");
+
+  if (profile.role !== "admin" && profile.role !== "branch_lead") {
+    throw new Error("Only admins and branch leads can delete tasks");
+  }
+
+  if (profile.role === "branch_lead") {
+    const { data: row, error: fetchErr } = await supabase
+      .from("tasks")
+      .select("branch_id, branch:branches(name)")
+      .eq("id", taskId)
+      .single();
+
+    if (fetchErr || !row) throw new Error("Task not found");
+
+    const br = row.branch as { name: string } | { name: string }[] | null;
+    const branchName = Array.isArray(br) ? br[0]?.name : br?.name;
+    const userBranch = profile.branch ?? null;
+    if (branchName && branchName !== userBranch) {
+      throw new Error("You can only delete tasks in your branch");
+    }
+  }
+
+  const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+
+  if (error) throw new Error(error.message);
 
   revalidatePath("/tasks");
   revalidatePath("/payroll");

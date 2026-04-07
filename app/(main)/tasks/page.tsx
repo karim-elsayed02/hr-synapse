@@ -11,6 +11,7 @@ import {
   unassignTask,
 } from "@/lib/actions/task-actions";
 import { CreateTaskSheet } from "@/components/tasks/create-task-sheet";
+import { DeleteTaskButton } from "@/components/tasks/delete-task-button";
 import { RecentTaskLogs } from "@/components/tasks/recent-task-logs";
 import { CalendarDays, SlidersHorizontal, ShieldCheck } from "lucide-react";
 
@@ -133,6 +134,7 @@ export default async function TasksPage() {
   const isAdmin = profile.role === "admin";
   const isBranchLead = profile.role === "branch_lead";
   const canCreate = isAdmin || isBranchLead;
+  const canDeleteTask = isAdmin || isBranchLead;
 
   const userBranch = profile.branch ?? null;
   const userSubBranch = profile.department ?? null;
@@ -206,6 +208,7 @@ export default async function TasksPage() {
               userId={user.id}
               isAdmin={isAdmin}
               isManager={canCreate}
+              canDelete={canDeleteTask}
               staff={staffForAssign}
             />
           ))}
@@ -224,6 +227,7 @@ export default async function TasksPage() {
               userId={user.id}
               isAdmin={isAdmin}
               isManager={canCreate}
+              canDelete={canDeleteTask}
               staff={staffForAssign}
             />
           ))}
@@ -242,6 +246,7 @@ export default async function TasksPage() {
               userId={user.id}
               isAdmin={isAdmin}
               isManager={canCreate}
+              canDelete={canDeleteTask}
               staff={staffForAssign}
             />
           ))}
@@ -301,12 +306,14 @@ function TaskCard({
   userId,
   isAdmin,
   isManager,
+  canDelete,
   staff,
 }: {
   task: TaskRow;
   userId: string;
   isAdmin: boolean;
   isManager: boolean;
+  canDelete: boolean;
   staff: { id: string; full_name: string | null }[];
 }) {
   const branch = rel(task.branch);
@@ -340,8 +347,13 @@ function TaskCard({
 
   return (
     <div className="curator-card group relative overflow-hidden p-5 transition-transform duration-200 hover:-translate-y-0.5">
+      {canDelete && (
+        <div className="absolute right-4 top-4 z-10">
+          <DeleteTaskButton taskId={task.id} />
+        </div>
+      )}
       {/* Category tag + admin badge */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 pr-10">
         {branch && (
           <span
             className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tag.bg}`}
