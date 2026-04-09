@@ -254,7 +254,7 @@ export default async function TasksPage() {
       </div>
 
       {/* Full history including approved — search filters by title, ID, or assignee */}
-      <RecentTaskLogs tasks={tasks} />
+      <RecentTaskLogs tasks={tasks} canDelete={isAdmin} />
     </div>
   );
 }

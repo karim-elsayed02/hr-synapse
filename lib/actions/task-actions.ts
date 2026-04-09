@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { normalizeBranchSlug } from "@/lib/utils/org-structure";
 import { isManagerLikeRole } from "@/lib/utils/permissions";
 import {
   notifyTaskAssigned,
@@ -491,37 +492,62 @@ export async function approveTask(formData: FormData) {
   revalidatePath("/payroll");
 }
 
-/** Admins: any task. Branch leads: tasks in their branch (or with no branch). */
-export async function deleteTask(formData: FormData) {
-  const { supabase, profile } = await requireUser();
-  const taskId = String(formData.get("taskId") ?? "").trim();
-  if (!taskId) throw new Error("Missing taskId");
+export type DeleteTaskResult = { error: string | null };
 
-  if (profile.role !== "admin" && profile.role !== "branch_lead") {
-    throw new Error("Only admins and branch leads can delete tasks");
-  }
+/**
+ * Admins: any task. Branch leads: tasks in their branch (or with no branch).
+ * Removes linked payroll_entries first so FK constraints do not block task delete.
+ */
+export async function deleteTask(formData: FormData): Promise<DeleteTaskResult> {
+  try {
+    const { supabase, profile } = await requireUser();
+    const taskId = String(formData.get("taskId") ?? "").trim();
+    if (!taskId) return { error: "Missing task id" };
 
-  if (profile.role === "branch_lead") {
-    const { data: row, error: fetchErr } = await supabase
-      .from("tasks")
-      .select("branch_id, branch:branches(name)")
-      .eq("id", taskId)
-      .single();
-
-    if (fetchErr || !row) throw new Error("Task not found");
-
-    const br = row.branch as { name: string } | { name: string }[] | null;
-    const branchName = Array.isArray(br) ? br[0]?.name : br?.name;
-    const userBranch = profile.branch ?? null;
-    if (branchName && branchName !== userBranch) {
-      throw new Error("You can only delete tasks in your branch");
+    if (profile.role !== "admin" && profile.role !== "branch_lead") {
+      return { error: "Only admins and branch leads can delete tasks" };
     }
+
+    if (profile.role === "branch_lead") {
+      const { data: row, error: fetchErr } = await supabase
+        .from("tasks")
+        .select("branch_id, branch:branches(name)")
+        .eq("id", taskId)
+        .single();
+
+      if (fetchErr || !row) return { error: "Task not found" };
+
+      const br = row.branch as { name: string } | { name: string }[] | null;
+      const branchName = Array.isArray(br) ? br[0]?.name : br?.name;
+      const userBranch = profile.branch ?? null;
+      const taskSlug = branchName ? normalizeBranchSlug(branchName) : null;
+      const userSlug = userBranch ? normalizeBranchSlug(userBranch) : null;
+      if (taskSlug && userSlug && taskSlug !== userSlug) {
+        return { error: "You can only delete tasks in your branch" };
+      }
+    }
+
+    const { error: payrollErr } = await supabase
+      .from("payroll_entries")
+      .delete()
+      .eq("task_id", taskId);
+
+    if (payrollErr) {
+      return {
+        error:
+          payrollErr.message ||
+          "Could not remove payroll lines for this task. Check database permissions.",
+      };
+    }
+
+    const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/tasks");
+    revalidatePath("/payroll");
+    return { error: null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Delete failed" };
   }
-
-  const { error } = await supabase.from("tasks").delete().eq("id", taskId);
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/tasks");
-  revalidatePath("/payroll");
 }

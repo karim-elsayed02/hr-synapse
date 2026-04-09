@@ -349,6 +349,33 @@ CREATE POLICY "Users can update their tasks" ON public.tasks
     )
   );
 
+CREATE POLICY "Admins can delete tasks" ON public.tasks
+  FOR DELETE TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid() AND p.role = 'admin'
+    )
+  );
+
+CREATE POLICY "Branch leads can delete tasks in their branch" ON public.tasks
+  FOR DELETE TO authenticated USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid() AND p.role = 'branch_lead'
+      AND (
+        branch_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM public.branches b
+          WHERE b.id = branch_id
+          AND (
+            b.name = p.branch
+            OR lower(regexp_replace(trim(b.name::text), '\s+', '_', 'g')) = lower(trim(p.branch::text))
+          )
+        )
+      )
+    )
+  );
+
 -- RLS policies for announcements
 CREATE POLICY "All users can read published announcements" ON public.announcements
   FOR SELECT USING (is_published = true);

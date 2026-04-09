@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { DeleteTaskButton } from "@/components/tasks/delete-task-button";
 
 type BranchRel = { id: string; name: string } | { id: string; name: string }[] | null;
 type ProfileRel =
@@ -74,7 +75,14 @@ function matchesQuery(task: RecentTaskLogRow, raw: string): boolean {
   );
 }
 
-export function RecentTaskLogs({ tasks }: { tasks: RecentTaskLogRow[] }) {
+export function RecentTaskLogs({
+  tasks,
+  canDelete = false,
+}: {
+  tasks: RecentTaskLogRow[];
+  /** When true (typically admin), show a per-row delete control. */
+  canDelete?: boolean;
+}) {
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => tasks.filter((t) => matchesQuery(t, query)), [tasks, query]);
@@ -112,6 +120,9 @@ export function RecentTaskLogs({ tasks }: { tasks: RecentTaskLogRow[] }) {
                 <th className="px-4 py-3">Assigned to</th>
                 <th className="px-4 py-3">Created</th>
                 <th className="px-4 py-3 text-right">Status</th>
+                {canDelete ? (
+                  <th className="w-14 px-3 py-3 text-center" aria-label="Delete task" />
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -143,6 +154,13 @@ export function RecentTaskLogs({ tasks }: { tasks: RecentTaskLogRow[] }) {
                     <td className="px-4 py-4 text-right">
                       <StatusPill status={task.status} />
                     </td>
+                    {canDelete ? (
+                      <td className="px-2 py-4 align-middle">
+                        <div className="flex justify-center">
+                          <DeleteTaskButton taskId={task.id} />
+                        </div>
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
