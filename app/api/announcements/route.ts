@@ -50,6 +50,34 @@ export async function GET(request: NextRequest) {
 
   if (loginOnly) {
     query = query.eq("show_on_login", true);
+
+    const { data: views } = await supabase
+      .from("announcement_views")
+      .select("announcement_id")
+      .eq("user_id", user.id);
+
+    const viewedIds = new Set((views ?? []).map((v: { announcement_id: string }) => v.announcement_id));
+
+    const { data: allData, error: loginError } = await query;
+    if (loginError) {
+      console.error("GET /api/announcements failed:", loginError);
+      return NextResponse.json({ error: loginError.message }, { status: 500 });
+    }
+
+    const unseen = (allData ?? []).filter(
+      (a: Record<string, unknown>) => !viewedIds.has(a.id as string)
+    );
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const enriched = unseen.map((a: Record<string, unknown>) => ({
+      ...a,
+      image_url:
+        a.image_bucket && a.image_path && supabaseUrl
+          ? `${supabaseUrl}/storage/v1/object/public/${a.image_bucket}/${a.image_path}`
+          : null,
+    }));
+
+    return NextResponse.json(enriched);
   }
 
   const { data, error } = await query;

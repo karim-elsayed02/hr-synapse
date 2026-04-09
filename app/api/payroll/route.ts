@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { calendarMonthYearLondon, ensurePayrollBatchForMonth } from "@/lib/payroll-monthly-batch";
 import { notifyPayEntryCreated, notifyPayEntryPaid } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
@@ -220,6 +221,20 @@ export async function POST(request: NextRequest) {
         { error: insertError.message || "Failed to create payroll entry" },
         { status: 400 }
       );
+    }
+
+    if (data?.id && task.claimed_by) {
+      const { month, year } = calendarMonthYearLondon();
+      const batchId = await ensurePayrollBatchForMonth(supabase, task.claimed_by as string, month, year);
+      if (batchId) {
+        const { error: linkErr } = await supabase
+          .from("payroll_entries")
+          .update({ payroll_batch_id: batchId })
+          .eq("id", data.id);
+        if (linkErr) {
+          console.error("POST /api/payroll link to monthly batch failed:", linkErr);
+        }
+      }
     }
 
     if (data?.id) {

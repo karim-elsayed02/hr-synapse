@@ -328,14 +328,6 @@ export default function StaffDirectoryClient({
       setLoading(false);
       return;
     }
-    if (
-      addStaffForm.branch !== "tutoring" &&
-      !addStaffForm.department?.trim()
-    ) {
-      setAddStaffError("Please select a sub-branch.");
-      setLoading(false);
-      return;
-    }
     try {
       if (addStaffMode === "invite") {
         const res = await fetch("/api/staff", {
@@ -588,16 +580,11 @@ export default function StaffDirectoryClient({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="add-dept">
-                      Sub-branch
-                      {addStaffForm.branch === "tutoring" ? (
-                        <span className="ml-1 font-normal text-[#001A3D]/45">
-                          (optional)
-                        </span>
-                      ) : null}
+                      Sub-branch{" "}
+                      <span className="ml-1 font-normal text-[#001A3D]/45">(optional)</span>
                     </Label>
                     <select
                       id="add-dept"
-                      required={addStaffForm.branch !== "tutoring"}
                       value={addStaffForm.department ?? ""}
                       onChange={(e) =>
                         setAddStaffForm((p) => ({ ...p, department: e.target.value }))
@@ -605,7 +592,7 @@ export default function StaffDirectoryClient({
                       className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                       disabled={loading}
                     >
-                      <option value="">Select sub-branch…</option>
+                      <option value="">None — whole branch</option>
                       {SUB_BRANCH_SLUGS.map((slug) => (
                         <option key={slug} value={slug}>
                           {SUB_BRANCH_LABELS[slug]}

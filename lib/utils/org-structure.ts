@@ -135,13 +135,5 @@ export function validateProfileBranchDept(
     };
   }
 
-  // Tutoring may omit sub-branch; other branches require one when a branch is set.
-  if (branch && branch !== "tutoring" && !department) {
-    return {
-      ok: false,
-      error: "Sub-branch is required for this branch.",
-    };
-  }
-
   return { ok: true, branch, department };
 }

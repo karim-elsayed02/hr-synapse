@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Clock,
   Download,
   Filter,
@@ -10,6 +11,7 @@ import {
   Layers,
   PlayCircle,
   PlusCircle,
+  RefreshCw,
   Trash2,
   TrendingUp,
 } from "lucide-react";
@@ -83,14 +85,24 @@ type ProcessedByProfile = {
   full_name: string | null;
 };
 
+type BatchStaffProfile = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  branch: string | null;
+};
+
 type PayrollBatch = {
   id: string;
   title: string;
-  period_start: string | null;
-  period_end: string | null;
+  month: number;
+  year: number;
+  total_payment_user_id: string;
   processed_by: string | null;
   processed_at: string | null;
   created_at: string;
+  staff: BatchStaffProfile | BatchStaffProfile[] | null;
   processed_by_profile: ProcessedByProfile | ProcessedByProfile[] | null;
   entry_count: number;
   total_amount: number;
@@ -141,6 +153,69 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+function monthYearLabel(month: number, year: number) {
+  return new Date(year, month - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+/** Collect human-readable date fragments for substring search (en-GB). */
+function appendIsoDateVariants(iso: string | null | undefined, sink: string[]) {
+  if (!iso) return;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return;
+  const gb = d.toLocaleDateString("en-GB");
+  sink.push(
+    d.toISOString().slice(0, 10),
+    gb,
+    gb.replace(/\//g, "-"),
+    gb.replace(/\//g, "."),
+    d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
+    d.toLocaleDateString("en-GB", { month: "long", year: "numeric" }),
+    d.toLocaleDateString("en-GB", { month: "short", year: "numeric" }),
+    String(d.getFullYear())
+  );
+}
+
+function buildEntryDateSearchBlob(e: PayrollEntry): string {
+  const parts: string[] = [];
+  appendIsoDateVariants(e.created_at, parts);
+  appendIsoDateVariants(e.paid_at, parts);
+  const t = one(e.task);
+  appendIsoDateVariants(t?.approved_at ?? null, parts);
+  return parts.join(" | ").toLowerCase();
+}
+
+function payrollBatchMatchesQuery(batch: PayrollBatch, q: string): boolean {
+  if (!q) return true;
+  const staff = one(batch.staff);
+  const parts: string[] = [
+    (staff?.full_name ?? "").toLowerCase(),
+    (staff?.email ?? "").toLowerCase(),
+    batch.title.toLowerCase(),
+    monthYearLabel(batch.month, batch.year).toLowerCase(),
+    String(batch.month),
+    String(batch.year),
+    `${batch.year}-${String(batch.month).padStart(2, "0")}`,
+  ];
+  appendIsoDateVariants(batch.created_at, parts);
+  appendIsoDateVariants(batch.processed_at, parts);
+  const blob = parts.join(" | ").toLowerCase();
+  return blob.includes(q);
+}
+
+type BatchPayStatus = "paid" | "unpaid" | "partial" | "empty";
+
+function batchPayrollPaymentStatus(batch: PayrollBatch): { kind: BatchPayStatus; label: string } {
+  const { entry_count, unpaid_count, paid_count } = batch;
+  if (entry_count === 0) return { kind: "empty", label: "No entries" };
+  if (unpaid_count === 0) return { kind: "paid", label: "Paid" };
+  if (paid_count === 0) return { kind: "unpaid", label: "Unpaid" };
+  return {
+    kind: "partial",
+    label: `${paid_count} paid · ${unpaid_count} unpaid`,
+  };
+}
+
 function exportCsv(rows: PayrollEntry[]) {
   const headers = ["Staff", "Email", "Role", "Branch", "Task", "Hours", "Rate", "Total pay", "Status", "Paid at", "Created"];
   const esc = (v: string | null | undefined) => `"${(v ?? "").replace(/"/g, '""')}"`;
@@ -189,20 +264,14 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
   /* ---- Batches state ---- */
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [batchLoading, setBatchLoading] = useState(true);
-  const [createBatchOpen, setCreateBatchOpen] = useState(false);
-  const [batchTitle, setBatchTitle] = useState("");
-  const [batchStart, setBatchStart] = useState("");
-  const [batchEnd, setBatchEnd] = useState("");
-  const [createBatchLoading, setCreateBatchLoading] = useState(false);
-  const [createBatchError, setCreateBatchError] = useState<string | null>(null);
-
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignBatchId, setAssignBatchId] = useState("");
-  const [assignSelection, setAssignSelection] = useState<Set<string>>(new Set());
-  const [assignLoading, setAssignLoading] = useState(false);
 
   const [processingBatchId, setProcessingBatchId] = useState<string | null>(null);
   const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+  const [batchQuery, setBatchQuery] = useState("");
+  /** Month keys (e.g. 2026-04) that are collapsed in the batches tab. */
+  const [collapsedBatchMonths, setCollapsedBatchMonths] = useState<Set<string>>(() => new Set());
 
   /* ---- Data fetching ---- */
   const fetchEntries = useCallback(async () => {
@@ -243,22 +312,57 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
 
   useEffect(() => {
     void fetchEntries();
-    if (isAdmin) void fetchBatches();
-  }, [fetchEntries, fetchBatches, isAdmin]);
+    void fetchBatches();
+  }, [fetchEntries, fetchBatches]);
 
-  useEffect(() => {
-    if (!isAdmin && tab === "batches") setTab("entries");
-  }, [isAdmin, tab]);
+  const batchGroups = useMemo(() => {
+    const map = new Map<string, PayrollBatch[]>();
+    for (const b of batches) {
+      const key = `${b.year}-${String(b.month).padStart(2, "0")}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(b);
+    }
+    const entriesList = Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+    return entriesList.map(([key, list]) => {
+      const [y, m] = key.split("-");
+      const month = parseInt(m ?? "1", 10);
+      const year = parseInt(y ?? "2000", 10);
+      list.sort((a, b) => {
+        const na = one(a.staff)?.full_name ?? "";
+        const nb = one(b.staff)?.full_name ?? "";
+        return na.localeCompare(nb);
+      });
+      return { key, month, year, label: monthYearLabel(month, year), batches: list };
+    });
+  }, [batches]);
+
+  const filteredBatchGroups = useMemo(() => {
+    const q = batchQuery.trim().toLowerCase().replace(/\s+/g, " ");
+    if (!q) return batchGroups;
+    return batchGroups
+      .map((g) => ({
+        ...g,
+        batches: g.batches.filter((b) => payrollBatchMatchesQuery(b, q)),
+      }))
+      .filter((g) => g.batches.length > 0);
+  }, [batchGroups, batchQuery]);
+
+  const entriesMissingBatch = useMemo(
+    () => entries.filter((e) => !e.payroll_batch_id).length,
+    [entries]
+  );
 
   /* ---- Entries filters ---- */
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim().toLowerCase().replace(/\s+/g, " ");
     const matched = entries.filter((e) => {
       const p = one(e.profile);
       const t = one(e.task);
+      const dateBlob = buildEntryDateSearchBlob(e);
       const matchQ =
         !q ||
         (p?.full_name ?? "").toLowerCase().includes(q) ||
+        dateBlob.includes(q) ||
         (p?.email ?? "").toLowerCase().includes(q) ||
         (t?.title ?? "").toLowerCase().includes(q);
       const matchStatus = statusFilter === "all" || e.status === statusFilter;
@@ -301,12 +405,6 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
   const computedPay =
     !Number.isNaN(profileRate) && profileRate > 0 ? effectiveHours * profileRate : 0;
 
-  /* Unassigned unpaid entries (for assign-to-batch modal) */
-  const unassignedUnpaid = useMemo(
-    () => entries.filter((e) => e.status === "unpaid" && !e.payroll_batch_id),
-    [entries]
-  );
-
   /* ---- Entry handlers ---- */
   function resetModal() {
     setSelectedTaskId("");
@@ -331,7 +429,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create entry");
       setAddSuccess(true);
-      await fetchEntries();
+      await Promise.all([fetchEntries(), fetchBatches()]);
     } catch (err) {
       setAddError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -351,7 +449,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
         const data = await res.json();
         throw new Error(data.error || "Failed to update");
       }
-      await Promise.all([fetchEntries(), isAdmin ? fetchBatches() : Promise.resolve()]);
+      await Promise.all([fetchEntries(), fetchBatches()]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -371,7 +469,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
         const data = await res.json();
         throw new Error(data.error || "Failed to update");
       }
-      await Promise.all([fetchEntries(), isAdmin ? fetchBatches() : Promise.resolve()]);
+      await Promise.all([fetchEntries(), fetchBatches()]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -380,67 +478,6 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
   }
 
   /* ---- Batch handlers ---- */
-  async function handleCreateBatch(e: React.FormEvent) {
-    e.preventDefault();
-    setCreateBatchLoading(true);
-    setCreateBatchError(null);
-    try {
-      const res = await fetch("/api/payroll/batches", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: batchTitle, period_start: batchStart || null, period_end: batchEnd || null }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create batch");
-      setCreateBatchOpen(false);
-      setBatchTitle("");
-      setBatchStart("");
-      setBatchEnd("");
-      await fetchBatches();
-    } catch (err) {
-      setCreateBatchError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setCreateBatchLoading(false);
-    }
-  }
-
-  function openAssignModal(batchId: string) {
-    setAssignBatchId(batchId);
-    setAssignSelection(new Set());
-    setAssignOpen(true);
-  }
-
-  function toggleAssignEntry(id: string) {
-    setAssignSelection((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleAssignEntries() {
-    if (!assignBatchId || assignSelection.size === 0) return;
-    setAssignLoading(true);
-    try {
-      const res = await fetch("/api/payroll/batches", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "assign", batch_id: assignBatchId, entry_ids: Array.from(assignSelection) }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to assign");
-      }
-      setAssignOpen(false);
-      await Promise.all([fetchEntries(), fetchBatches()]);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setAssignLoading(false);
-    }
-  }
-
   async function handleProcessBatch(batchId: string) {
     setProcessingBatchId(batchId);
     try {
@@ -481,6 +518,33 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
       setDeletingBatchId(null);
     }
   }
+
+  async function handleBackfillBatches() {
+    setBackfillLoading(true);
+    setBackfillMsg(null);
+    try {
+      const res = await fetch("/api/payroll/batches/backfill", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Backfill failed");
+      const parts = [`Linked ${data.linked} ${data.linked === 1 ? "entry" : "entries"}`];
+      if (data.skipped > 0) parts.push(`${data.skipped} could not be linked`);
+      setBackfillMsg(parts.join(". ") + ".");
+      await Promise.all([fetchEntries(), fetchBatches()]);
+    } catch (err) {
+      setBackfillMsg(err instanceof Error ? err.message : "Backfill failed");
+    } finally {
+      setBackfillLoading(false);
+    }
+  }
+
+  const toggleBatchMonth = useCallback((monthKey: string) => {
+    setCollapsedBatchMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
+      return next;
+    });
+  }, []);
 
   /* ================================================================ */
   /*  RENDER                                                           */
@@ -584,90 +648,6 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
         </DialogContent>
       </Dialog>
 
-      {/* Create Batch Dialog */}
-      <Dialog open={createBatchOpen} onOpenChange={setCreateBatchOpen}>
-        <DialogContent className="max-w-[460px] rounded-2xl border-[#001A3D]/10 bg-white text-[#001A3D]">
-          <form onSubmit={handleCreateBatch}>
-            <DialogHeader>
-              <DialogTitle className="font-display text-xl">Create batch</DialogTitle>
-              <DialogDescription className="text-[#001A3D]/60">Group payroll entries into a pay run for a specific period.</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="batch-title">Batch title</Label>
-                <Input id="batch-title" placeholder="e.g. April 2026 Week 1" value={batchTitle} onChange={(e) => setBatchTitle(e.target.value)} className="rounded-xl border-[#001A3D]/15" required disabled={createBatchLoading} />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="batch-start">Period start</Label>
-                  <Input id="batch-start" type="date" value={batchStart} onChange={(e) => setBatchStart(e.target.value)} className="rounded-xl border-[#001A3D]/15" disabled={createBatchLoading} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="batch-end">Period end</Label>
-                  <Input id="batch-end" type="date" value={batchEnd} onChange={(e) => setBatchEnd(e.target.value)} className="rounded-xl border-[#001A3D]/15" disabled={createBatchLoading} />
-                </div>
-              </div>
-              {createBatchError && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{createBatchError}</p>}
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button type="button" variant="outline" className="rounded-full border-[#001A3D]/20" disabled={createBatchLoading} onClick={() => setCreateBatchOpen(false)}>Cancel</Button>
-              <Button type="submit" className="rounded-full bg-[#FFB84D] font-semibold text-[#291800] hover:bg-[#f5a84a]" disabled={createBatchLoading || !batchTitle.trim()}>{createBatchLoading ? "Creating…" : "Create batch"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Assign Entries to Batch Dialog */}
-      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-        <DialogContent className="max-h-[85vh] max-w-[520px] overflow-y-auto rounded-2xl border-[#001A3D]/10 bg-white text-[#001A3D]">
-          <DialogHeader>
-            <DialogTitle className="font-display text-xl">Add entries to batch</DialogTitle>
-            <DialogDescription className="text-[#001A3D]/60">Select unpaid entries to include in this batch.</DialogDescription>
-          </DialogHeader>
-          <div className="py-2">
-            {unassignedUnpaid.length === 0 ? (
-              <p className="rounded-xl bg-[#f8f9fa] px-4 py-6 text-center text-sm text-[#001A3D]/50">No unassigned unpaid entries available.</p>
-            ) : (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (assignSelection.size === unassignedUnpaid.length) setAssignSelection(new Set());
-                    else setAssignSelection(new Set(unassignedUnpaid.map((e) => e.id)));
-                  }}
-                  className="text-xs font-medium text-[#001A3D]/50 hover:text-[#001A3D] transition"
-                >
-                  {assignSelection.size === unassignedUnpaid.length ? "Deselect all" : "Select all"}
-                </button>
-                {unassignedUnpaid.map((entry) => {
-                  const p = one(entry.profile);
-                  const t = one(entry.task);
-                  const checked = assignSelection.has(entry.id);
-                  return (
-                    <label
-                      key={entry.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition ${checked ? "border-[#FFB84D] bg-[#FFB84D]/5" : "border-[#001A3D]/10 hover:bg-[#f8f9fa]"}`}
-                    >
-                      <input type="checkbox" checked={checked} onChange={() => toggleAssignEntry(entry.id)} className="h-4 w-4 rounded border-[#001A3D]/20 text-[#FFB84D] focus:ring-[#FFB84D]/30" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-[#001A3D] truncate">{p?.full_name ?? "Unknown"}</p>
-                        <p className="text-xs text-[#001A3D]/50 truncate">{t?.title ?? "—"} • {currency(Number(entry.hours) * Number(entry.hourly_rate))}</p>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" className="rounded-full border-[#001A3D]/20" onClick={() => setAssignOpen(false)}>Cancel</Button>
-            <Button type="button" onClick={handleAssignEntries} className="rounded-full bg-[#FFB84D] font-semibold text-[#291800] hover:bg-[#f5a84a]" disabled={assignLoading || assignSelection.size === 0}>
-              {assignLoading ? "Assigning…" : `Add ${assignSelection.size} ${assignSelection.size === 1 ? "entry" : "entries"}`}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* ---- Page header ---- */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -680,14 +660,14 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
           <p className="mt-2 text-sm text-[#001A3D]/55">
             Task-based payroll <span className="text-[#001A3D]/35">•</span>{" "}
             <span className="font-medium text-[#001A3D]/70">{entries.length}</span> entries
-            {isAdmin ? (
-              <>
-                <span className="text-[#001A3D]/35"> • </span>
-                <span className="font-medium text-[#001A3D]/70">{batches.length}</span> batches
-              </>
-            ) : (
-              <span className="text-[#001A3D]/45"> — your pay entries only</span>
-            )}
+            <>
+              <span className="text-[#001A3D]/35"> • </span>
+              <span className="font-medium text-[#001A3D]/70">{batches.length}</span>{" "}
+              monthly {batches.length === 1 ? "batch" : "batches"}
+              {!isAdmin ? (
+                <span className="text-[#001A3D]/45"> (your entries only)</span>
+              ) : null}
+            </>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -705,32 +685,25 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
               )}
             </>
           )}
-          {tab === "batches" && isAdmin && (
-            <button type="button" onClick={() => { setCreateBatchError(null); setCreateBatchOpen(true); }} className="inline-flex h-11 items-center gap-2 rounded-3xl bg-[#FFB84D] px-5 text-sm font-semibold text-[#291800] shadow-[0_8px_24px_rgba(0,26,61,0.06)] transition hover:bg-[#f5a84a]">
-              <PlusCircle className="h-4 w-4" strokeWidth={2} /> Create Batch
-            </button>
-          )}
         </div>
       </div>
 
       {/* ---- Tabs ---- */}
-      <div className={`flex gap-1 rounded-2xl bg-[#f3f4f5] p-1 ${!isAdmin ? "max-w-md" : ""}`}>
+      <div className="flex max-w-md gap-1 rounded-2xl bg-[#f3f4f5] p-1">
         <button
           type="button"
           onClick={() => setTab("entries")}
-          className={`${isAdmin ? "flex-1" : "w-full"} rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "entries" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "entries" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
         >
           <Layers className="mr-2 inline h-4 w-4" /> Entries
         </button>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => setTab("batches")}
-            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "batches" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
-          >
-            <FolderOpen className="mr-2 inline h-4 w-4" /> Batches
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setTab("batches")}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === "batches" ? "bg-white text-[#001A3D] shadow-sm" : "text-[#001A3D]/50 hover:text-[#001A3D]/70"}`}
+        >
+          <FolderOpen className="mr-2 inline h-4 w-4" /> Batches
+        </button>
       </div>
 
       {/* ================================================================ */}
@@ -741,10 +714,25 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
           <div className="space-y-6 xl:col-span-2">
             {/* Filters */}
             <div className="curator-card p-6 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="relative">
-                  <Filter className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#001A3D]/35" />
-                  <input type="search" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search by name or task..." className="h-12 w-full rounded-2xl bg-[#f3f4f5] pl-11 pr-4 text-sm text-[#001A3D] outline-none ring-0 transition placeholder:text-[#001A3D]/40 focus:bg-white focus:shadow-[0_0_0_2px_rgba(255,184,77,0.35)]" />
+              <div className="grid grid-cols-1 items-end gap-4 md:grid-cols-2">
+                <div>
+                  <div className="relative">
+                    <Filter className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#001A3D]/35" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setPage(1);
+                      }}
+                      placeholder="Staff name, date, or task…"
+                      className="h-12 w-full rounded-2xl bg-[#f3f4f5] pl-11 pr-4 text-sm text-[#001A3D] outline-none ring-0 transition placeholder:text-[#001A3D]/40 focus:bg-white focus:shadow-[0_0_0_2px_rgba(255,184,77,0.35)]"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-[#001A3D]/40">
+                    Dates: entry created, paid, or task approved (e.g. <span className="whitespace-nowrap">2026-04-09</span>,{" "}
+                    <span className="whitespace-nowrap">09/04/2026</span>, April 2026).
+                  </p>
                 </div>
                 <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
                   <SelectTrigger className="h-12 rounded-2xl border-0 bg-[#f3f4f5] text-[#001A3D] shadow-none focus:ring-2 focus:ring-[#FFB84D]/40"><SelectValue placeholder="All statuses" /></SelectTrigger>
@@ -941,7 +929,50 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
       {/*  BATCHES TAB                                                      */}
       {/* ================================================================ */}
       {tab === "batches" && (
-        <div className="space-y-6">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <p className="text-sm text-[#001A3D]/55">
+              {isAdmin
+                ? "Each staff member gets one batch per calendar month (UK). Totals are the sum of task payments in that batch. New entries are added automatically."
+                : "Your pay is grouped by calendar month. Amounts are the sum of your payroll entries for that month."}
+            </p>
+            {isAdmin && entriesMissingBatch > 0 && (
+              <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                <button
+                  type="button"
+                  disabled={backfillLoading}
+                  onClick={() => void handleBackfillBatches()}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#001A3D]/15 bg-white px-4 text-sm font-semibold text-[#001A3D] shadow-sm transition hover:bg-[#f8f9fa] disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-4 w-4 ${backfillLoading ? "animate-spin" : ""}`} />
+                  {backfillLoading ? "Linking…" : `Link ${entriesMissingBatch} older ${entriesMissingBatch === 1 ? "entry" : "entries"} to batches`}
+                </button>
+                {backfillMsg && (
+                  <p
+                    className={`max-w-sm text-right text-xs ${backfillMsg.includes("failed") || backfillMsg.includes("could not") ? "text-amber-800" : "text-emerald-800"}`}
+                  >
+                    {backfillMsg}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {!batchLoading && batches.length > 0 && (
+            <div className="curator-card p-4 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
+              <div className="relative">
+                <Filter className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#001A3D]/35" />
+                <input
+                  type="search"
+                  value={batchQuery}
+                  onChange={(e) => setBatchQuery(e.target.value)}
+                  placeholder="Filter batches by staff name, month, year, or date…"
+                  className="h-11 w-full rounded-2xl bg-[#f3f4f5] pl-11 pr-4 text-sm text-[#001A3D] outline-none ring-0 transition placeholder:text-[#001A3D]/40 focus:bg-white focus:shadow-[0_0_0_2px_rgba(255,184,77,0.35)]"
+                />
+              </div>
+            </div>
+          )}
+
           {batchLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#001A3D]/20 border-t-[#FFB84D]" />
@@ -949,84 +980,182 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
           ) : batches.length === 0 ? (
             <div className="curator-card flex flex-col items-center justify-center gap-3 py-20 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
               <FolderOpen className="h-10 w-10 text-[#001A3D]/20" />
-              <p className="text-sm text-[#001A3D]/50">No batches yet. Create one to start grouping payroll entries.</p>
+              <p className="text-sm text-[#001A3D]/50">
+                {isAdmin
+                  ? "No monthly batches yet. They appear when you add payroll entries."
+                  : "No monthly batches yet. Your admin will add payments for your approved tasks."}
+              </p>
+            </div>
+          ) : filteredBatchGroups.length === 0 ? (
+            <div className="curator-card flex flex-col items-center justify-center gap-3 py-16 shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
+              <p className="text-sm text-[#001A3D]/50">No batches match your search. Try another name or month.</p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {batches.map((batch) => {
-                const processed = !!batch.processed_at;
-                const processor = one(batch.processed_by_profile);
-                return (
-                  <div key={batch.id} className="curator-card overflow-hidden shadow-[0_8px_24px_rgba(0,26,61,0.06)]">
-                    <div className="p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h3 className="font-display text-lg font-semibold text-[#001A3D] truncate">{batch.title}</h3>
-                          {(batch.period_start || batch.period_end) && (
-                            <p className="mt-0.5 text-xs text-[#001A3D]/50">
-                              {fmtDate(batch.period_start)} — {fmtDate(batch.period_end)}
-                            </p>
-                          )}
-                        </div>
-                        <span className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${processed ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                          {processed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                          {processed ? "Processed" : "Pending"}
-                        </span>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-3 gap-3">
-                        <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 text-center">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#001A3D]/40">Entries</p>
-                          <p className="mt-0.5 font-display text-lg font-semibold text-[#001A3D]">{batch.entry_count}</p>
-                        </div>
-                        <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 text-center">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#001A3D]/40">Total</p>
-                          <p className="mt-0.5 font-display text-lg font-semibold text-[#001A3D]">{currency(batch.total_amount)}</p>
-                        </div>
-                        <div className="rounded-xl bg-[#f8f9fa] px-3 py-2.5 text-center">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#001A3D]/40">Unpaid</p>
-                          <p className="mt-0.5 font-display text-lg font-semibold text-[#001A3D]">{batch.unpaid_count}</p>
-                        </div>
-                      </div>
-
-                      {processed && processor && (
-                        <p className="mt-3 text-xs text-[#001A3D]/40">
-                          Processed by {processor.full_name} on {fmtDate(batch.processed_at)}
-                        </p>
-                      )}
+            filteredBatchGroups.map((group) => {
+              const collapsed = collapsedBatchMonths.has(group.key);
+              const monthTotal = group.batches.reduce((s, b) => s + Number(b.total_amount), 0);
+              const monthEntries = group.batches.reduce((s, b) => s + b.entry_count, 0);
+              return (
+                <section
+                  key={group.key}
+                  className="curator-card overflow-hidden shadow-[0_8px_24px_rgba(0,26,61,0.06)]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleBatchMonth(group.key)}
+                    aria-expanded={!collapsed}
+                    className="flex w-full min-h-[3.25rem] items-center gap-3 border-b border-[#001A3D]/6 bg-linear-to-r from-[#f8f9fa] to-white px-4 py-3 text-left transition hover:from-[#f3f4f5] sm:px-6"
+                  >
+                    <ChevronDown
+                      className={`h-5 w-5 shrink-0 text-[#001A3D]/50 transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-display text-base font-semibold text-[#001A3D] sm:text-lg">
+                        {group.label}
+                      </span>
+                      <span className="mt-1 block text-xs leading-relaxed text-[#001A3D]/45 sm:mt-0 sm:ml-3 sm:inline">
+                        {group.batches.length} {group.batches.length === 1 ? "batch" : "batches"}
+                        <span className="text-[#001A3D]/30"> · </span>
+                        {monthEntries} {monthEntries === 1 ? "entry" : "entries"}
+                        <span className="text-[#001A3D]/30"> · </span>
+                        <span className="font-medium text-[#001A3D]/65">{currency(monthTotal)}</span> total
+                      </span>
                     </div>
+                  </button>
 
-                    {isAdmin && (
-                      <div className="flex items-center gap-2 border-t border-[#001A3D]/6 px-5 py-3">
-                        <button type="button" onClick={() => openAssignModal(batch.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#001A3D]/12 bg-white px-3 py-1.5 text-xs font-medium text-[#001A3D]/70 transition hover:bg-[#f8f9fa]">
-                          <PlusCircle className="h-3.5 w-3.5" /> Add entries
-                        </button>
-                        {!processed && batch.unpaid_count > 0 && (
-                          <button
-                            type="button"
-                            disabled={processingBatchId === batch.id}
-                            onClick={() => handleProcessBatch(batch.id)}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                          >
-                            <PlayCircle className="h-3.5 w-3.5" />
-                            {processingBatchId === batch.id ? "Processing…" : "Process all"}
-                          </button>
-                        )}
-                        <div className="flex-1" />
-                        <button
-                          type="button"
-                          disabled={deletingBatchId === batch.id}
-                          onClick={() => handleDeleteBatch(batch.id)}
-                          className="inline-flex items-center gap-1.5 rounded-xl px-2 py-1.5 text-xs text-red-500/70 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  {!collapsed && (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[920px] w-full border-collapse">
+                        <thead>
+                          <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[#001A3D]/45">
+                            <th className="whitespace-nowrap px-4 py-3 sm:px-6">Staff</th>
+                            {isAdmin ? <th className="whitespace-nowrap px-4 py-3">Role</th> : null}
+                            <th className="whitespace-nowrap px-4 py-3">Entries</th>
+                            <th className="whitespace-nowrap px-4 py-3">Total owed</th>
+                            <th className="whitespace-nowrap px-4 py-3">Payment</th>
+                            <th className="whitespace-nowrap px-4 py-3">Pay run</th>
+                            {isAdmin ? (
+                              <th className="whitespace-nowrap px-4 py-3 text-right sm:pr-6">Actions</th>
+                            ) : null}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.batches.map((batch) => {
+                            const staff = one(batch.staff);
+                            const processor = one(batch.processed_by_profile);
+                            const processed = !!batch.processed_at;
+                            const pay = batchPayrollPaymentStatus(batch);
+                            const payClass =
+                              pay.kind === "paid"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : pay.kind === "unpaid"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : pay.kind === "partial"
+                                    ? "bg-sky-50 text-sky-900"
+                                    : "bg-[#f3f4f5] text-[#001A3D]/50";
+                            return (
+                              <tr
+                                key={batch.id}
+                                className="border-t border-[#001A3D]/6 transition-colors hover:bg-[#f8f9fa]/90"
+                              >
+                                <td className="px-4 py-3 align-middle sm:px-6">
+                                  <div className="flex min-w-[200px] items-center gap-3">
+                                    <Avatar className="h-9 w-9 ring-2 ring-white shadow-sm">
+                                      <AvatarFallback className="bg-linear-to-br from-[#001A3D] to-[#011b3e] text-[10px] font-semibold text-[#FFB84D]">
+                                        {initials(staff?.full_name ?? null)}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-[#001A3D]">
+                                        {staff?.full_name ?? "—"}
+                                      </p>
+                                      <p className="truncate text-xs text-[#001A3D]/45">{staff?.email ?? "—"}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                {isAdmin ? (
+                                  <td className="px-4 py-3 align-middle">
+                                    <span
+                                      className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(staff?.role ?? null)}`}
+                                    >
+                                      {roleLabel(staff?.role ?? null)}
+                                    </span>
+                                  </td>
+                                ) : null}
+                                <td className="px-4 py-3 align-middle text-sm font-medium tabular-nums text-[#001A3D]/85">
+                                  {batch.entry_count}
+                                </td>
+                                <td className="px-4 py-3 align-middle text-sm font-semibold tabular-nums text-[#001A3D]">
+                                  {currency(batch.total_amount)}
+                                </td>
+                                <td className="px-4 py-3 align-middle">
+                                  <span
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${payClass}`}
+                                  >
+                                    {pay.kind === "paid" ? (
+                                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                    ) : (
+                                      <Clock className="h-3.5 w-3.5 shrink-0" />
+                                    )}
+                                    {pay.label}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 align-middle">
+                                  <div className="flex min-w-[7rem] flex-col gap-0.5">
+                                    <span
+                                      className={`inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${processed ? "bg-emerald-50/80 text-emerald-800" : "bg-[#001A3D]/6 text-[#001A3D]/70"}`}
+                                    >
+                                      {processed ? (
+                                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                      ) : (
+                                        <Clock className="h-3.5 w-3.5 shrink-0" />
+                                      )}
+                                      {processed ? "Processed" : "Pending"}
+                                    </span>
+                                    {processed && processor ? (
+                                      <span className="max-w-[14rem] truncate text-[10px] text-[#001A3D]/40">
+                                        {processor.full_name} · {fmtDate(batch.processed_at)}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                {isAdmin ? (
+                                  <td className="px-4 py-3 align-middle text-right sm:pr-6">
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                      {!processed && batch.unpaid_count > 0 ? (
+                                        <button
+                                          type="button"
+                                          disabled={processingBatchId === batch.id}
+                                          onClick={() => handleProcessBatch(batch.id)}
+                                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                        >
+                                          <PlayCircle className="h-3.5 w-3.5" />
+                                          {processingBatchId === batch.id ? "…" : "Pay all"}
+                                        </button>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        disabled={deletingBatchId === batch.id}
+                                        onClick={() => handleDeleteBatch(batch.id)}
+                                        className="inline-flex items-center rounded-lg p-1.5 text-red-500/80 hover:bg-red-50 disabled:opacity-50"
+                                        title="Remove batch and unlink entries"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                ) : null}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              );
+            })
           )}
         </div>
       )}

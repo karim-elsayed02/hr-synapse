@@ -4,6 +4,8 @@ import { notifyPayEntryPaid } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
+const PAYROLL_VIEW_ROLES = new Set(["admin", "branch_lead", "sub_branch_lead", "staff"]);
+
 async function getAuthenticatedUser() {
   const supabase = createClient();
   const {
@@ -24,7 +26,8 @@ async function getAuthenticatedUser() {
 
 /**
  * GET /api/payroll/batches
- * List all batches with entry counts and totals.
+ * Monthly batches per staff member: sums unpaid/paid from linked payroll_entries.
+ * Admins see everyone; other payroll roles only their own (total_payment_user_id = self).
  */
 export async function GET() {
   try {
@@ -33,23 +36,35 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
+    if (!role || !PAYROLL_VIEW_ROLES.has(role)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const { data: batches, error: batchErr } = await supabase
+    let query = supabase
       .from("payroll_batches")
-      .select(`
+      .select(
+        `
         id,
         title,
-        period_start,
-        period_end,
+        month,
+        year,
+        total_payment_user_id,
         processed_by,
         processed_at,
         created_at,
+        staff:profiles!payroll_batches_total_payment_user_id_fkey(id, full_name, email, role, branch),
         processed_by_profile:profiles!payroll_batches_processed_by_fkey(id, full_name)
-      `)
+      `
+      )
+      .order("year", { ascending: false })
+      .order("month", { ascending: false })
       .order("created_at", { ascending: false });
+
+    if (role !== "admin") {
+      query = query.eq("total_payment_user_id", user.id);
+    }
+
+    const { data: batches, error: batchErr } = await query;
 
     if (batchErr) {
       console.error("GET /api/payroll/batches failed:", batchErr);
@@ -62,11 +77,17 @@ export async function GET() {
 
     const entryList = entries ?? [];
     const enriched = (batches ?? []).map((b: Record<string, unknown>) => {
-      const batchEntries = entryList.filter((e: { payroll_batch_id: string | null }) => e.payroll_batch_id === b.id);
+      const batchId = b.id as string;
+      const batchEntries = entryList.filter(
+        (e: { payroll_batch_id: string | null }) => e.payroll_batch_id === batchId
+      );
       return {
         ...b,
         entry_count: batchEntries.length,
-        total_amount: batchEntries.reduce((s: number, e: { total_pay: number }) => s + Number(e.total_pay), 0),
+        total_amount: batchEntries.reduce(
+          (s: number, e: { total_pay: number }) => s + Number(e.total_pay),
+          0
+        ),
         paid_count: batchEntries.filter((e: { status: string }) => e.status === "paid").length,
         unpaid_count: batchEntries.filter((e: { status: string }) => e.status === "unpaid").length,
       };
@@ -80,53 +101,8 @@ export async function GET() {
 }
 
 /**
- * POST /api/payroll/batches
- * Create a new batch.
- */
-export async function POST(request: NextRequest) {
-  try {
-    const { user, role, supabase } = await getAuthenticatedUser();
-
-    if (!user) {
-      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-    }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const title = String(body.title ?? "").trim();
-    const period_start = body.period_start || null;
-    const period_end = body.period_end || null;
-
-    if (!title) {
-      return NextResponse.json({ error: "Batch title is required" }, { status: 400 });
-    }
-
-    const { data, error: insertErr } = await supabase
-      .from("payroll_batches")
-      .insert({ title, period_start, period_end })
-      .select("id")
-      .single();
-
-    if (insertErr) {
-      console.error("POST /api/payroll/batches insert failed:", insertErr);
-      return NextResponse.json({ error: insertErr.message }, { status: 400 });
-    }
-
-    return NextResponse.json({ success: true, id: data?.id });
-  } catch (err) {
-    console.error("POST /api/payroll/batches unexpected:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
-}
-
-/**
  * PATCH /api/payroll/batches
- * Assign entries to a batch, or process a batch (mark all entries paid).
- * Body: { action: "assign", batch_id, entry_ids: string[] }
- *   or  { action: "process", batch_id }
- *   or  { action: "remove", entry_ids: string[] }
+ * { action: "process", batch_id } — admin only: mark all unpaid entries in batch paid, set processed_at.
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -141,47 +117,6 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     const action = String(body.action ?? "").trim();
-
-    if (action === "assign") {
-      const batch_id = String(body.batch_id ?? "").trim();
-      const entry_ids = body.entry_ids as string[];
-
-      if (!batch_id || !Array.isArray(entry_ids) || entry_ids.length === 0) {
-        return NextResponse.json({ error: "batch_id and entry_ids required" }, { status: 400 });
-      }
-
-      const { error } = await supabase
-        .from("payroll_entries")
-        .update({ payroll_batch_id: batch_id })
-        .in("id", entry_ids);
-
-      if (error) {
-        console.error("Assign entries to batch failed:", error);
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-
-      return NextResponse.json({ success: true });
-    }
-
-    if (action === "remove") {
-      const entry_ids = body.entry_ids as string[];
-
-      if (!Array.isArray(entry_ids) || entry_ids.length === 0) {
-        return NextResponse.json({ error: "entry_ids required" }, { status: 400 });
-      }
-
-      const { error } = await supabase
-        .from("payroll_entries")
-        .update({ payroll_batch_id: null })
-        .in("id", entry_ids);
-
-      if (error) {
-        console.error("Remove entries from batch failed:", error);
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-
-      return NextResponse.json({ success: true });
-    }
 
     if (action === "process") {
       const batch_id = String(body.batch_id ?? "").trim();
@@ -245,7 +180,7 @@ export async function PATCH(request: NextRequest) {
 
 /**
  * DELETE /api/payroll/batches
- * Delete a batch (unlinks entries, does not delete them).
+ * Admin only: unlink entries and delete the batch row.
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -270,10 +205,7 @@ export async function DELETE(request: NextRequest) {
       .update({ payroll_batch_id: null })
       .eq("payroll_batch_id", batch_id);
 
-    const { error } = await supabase
-      .from("payroll_batches")
-      .delete()
-      .eq("id", batch_id);
+    const { error } = await supabase.from("payroll_batches").delete().eq("id", batch_id);
 
     if (error) {
       console.error("DELETE batch failed:", error);

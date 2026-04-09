@@ -11,26 +11,6 @@ type Announcement = {
   image_alt_text: string | null;
 };
 
-const DISMISSED_KEY = "synapse_announcements_dismissed";
-
-function getDismissedIds(): Set<string> {
-  try {
-    const raw = sessionStorage.getItem(DISMISSED_KEY);
-    if (!raw) return new Set();
-    return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-function persistDismissed(ids: Set<string>) {
-  try {
-    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
-  } catch {
-    /* quota / SSR */
-  }
-}
-
 export function LoginAnnouncementOverlay() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -45,11 +25,7 @@ export function LoginAnnouncementOverlay() {
         const data: Announcement[] = await res.json();
         if (cancelled || !data.length) return;
 
-        const dismissed = getDismissedIds();
-        const unseen = data.filter((a) => !dismissed.has(a.id));
-        if (unseen.length === 0) return;
-
-        setAnnouncements(unseen);
+        setAnnouncements(data);
         setCurrentIdx(0);
         setVisible(true);
       } catch {
@@ -61,10 +37,16 @@ export function LoginAnnouncementOverlay() {
   }, []);
 
   const dismiss = useCallback(() => {
-    const ids = getDismissedIds();
-    announcements.forEach((a) => ids.add(a.id));
-    persistDismissed(ids);
     setVisible(false);
+
+    const ids = announcements.map((a) => a.id);
+    if (ids.length === 0) return;
+
+    fetch("/api/announcements/views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ announcement_ids: ids }),
+    }).catch(() => {});
   }, [announcements]);
 
   if (!visible || announcements.length === 0) return null;

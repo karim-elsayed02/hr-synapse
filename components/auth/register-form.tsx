@@ -51,7 +51,9 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
     const formData = new FormData(event.currentTarget)
     if (isAdminCreating) {
       if (selectedBranch) formData.set("branch", selectedBranch)
-      if (selectedDepartment) formData.set("department", selectedDepartment)
+      if (selectedDepartment && selectedDepartment !== "_none") {
+        formData.set("department", selectedDepartment)
+      }
     }
 
     const email = formData.get("email") as string
@@ -189,16 +191,20 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="department">Sub-branch</Label>
+                <Label htmlFor="department">
+                  Sub-branch <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
                 <Select
-                  value={selectedDepartment}
-                  onValueChange={setSelectedDepartment}
-                  required
+                  value={selectedDepartment || "_none"}
+                  onValueChange={(value) =>
+                    setSelectedDepartment(value === "_none" ? "" : value)
+                  }
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a sub-branch" />
+                  <SelectTrigger id="department">
+                    <SelectValue placeholder="Whole branch — no sub-branch" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="_none">Whole branch (no sub-branch)</SelectItem>
                     {SUB_BRANCH_SLUGS.map((slug) => (
                       <SelectItem key={slug} value={slug}>
                         {SUB_BRANCH_LABELS[slug]}

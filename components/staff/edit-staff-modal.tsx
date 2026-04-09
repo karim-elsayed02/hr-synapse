@@ -91,10 +91,6 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
       setError("Please select a branch.");
       return;
     }
-    if (form.branch !== "tutoring" && !form.department?.trim()) {
-      setError("Please select a sub-branch.");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
@@ -195,16 +191,11 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-dept">
-                  Sub-branch
-                  {form.branch === "tutoring" ? (
-                    <span className="ml-1 font-normal text-[#001A3D]/45">
-                      (optional)
-                    </span>
-                  ) : null}
+                  Sub-branch{" "}
+                  <span className="ml-1 font-normal text-[#001A3D]/45">(optional)</span>
                 </Label>
                 <select
                   id="edit-dept"
-                  required={form.branch !== "tutoring"}
                   value={form.department ?? ""}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, department: e.target.value }))
@@ -212,7 +203,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                   className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                   disabled={loading}
                 >
-                  <option value="">Select sub-branch…</option>
+                  <option value="">None — whole branch</option>
                   {SUB_BRANCH_SLUGS.map((slug) => (
                     <option key={slug} value={slug}>
                       {SUB_BRANCH_LABELS[slug]}
