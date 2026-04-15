@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { DeleteTaskButton } from "@/components/tasks/delete-task-button";
+import { TaskAttachmentPreview } from "@/components/tasks/task-attachment-preview";
+import { attachmentFileLabel } from "@/lib/task-attachments";
 
 type BranchRel = { id: string; name: string } | { id: string; name: string }[] | null;
 type ProfileRel =
@@ -17,6 +19,7 @@ export type RecentTaskLogRow = {
   created_at: string;
   branch: BranchRel;
   claimed_by_profile: ProfileRel;
+  attachment_path?: string | null;
 };
 
 function rel<T>(value: T | T[] | null): T | null {
@@ -116,6 +119,7 @@ export function RecentTaskLogs({
             <thead>
               <tr className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#001A3D]/40">
                 <th className="px-6 py-3">Task details</th>
+                <th className="px-4 py-3 w-28">File</th>
                 <th className="px-4 py-3">Branch</th>
                 <th className="px-4 py-3">Assigned to</th>
                 <th className="px-4 py-3">Created</th>
@@ -129,11 +133,24 @@ export function RecentTaskLogs({
               {filtered.map((task) => {
                 const branch = rel(task.branch);
                 const claimer = rel(task.claimed_by_profile);
+                const attLabel = attachmentFileLabel(task.attachment_path ?? null);
                 return (
                   <tr key={task.id} className="transition-colors hover:bg-[#f8f9fa]">
                     <td className="px-6 py-4">
                       <p className="font-medium text-[#001A3D]">{task.title}</p>
                       <p className="mt-0.5 text-xs text-[#001A3D]/40">ID: {task.id.slice(0, 8)}</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      {task.attachment_path ? (
+                        <TaskAttachmentPreview
+                          taskId={task.id}
+                          attachmentPath={task.attachment_path}
+                          label={attLabel}
+                          compact
+                        />
+                      ) : (
+                        <span className="text-xs text-[#001A3D]/30">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-[#001A3D]/65">{branch?.name ?? "—"}</td>
                     <td className="px-4 py-4">

@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { removeTaskAttachmentStorage } from "@/lib/task-attachments";
 import { normalizeBranchSlug } from "@/lib/utils/org-structure";
+import { assertBranchExists, assertSubBranchExists } from "@/lib/utils/sub-branch-branch";
 import { isManagerLikeRole } from "@/lib/utils/permissions";
 import {
   notifyTaskAssigned,
@@ -142,6 +144,20 @@ export async function createTaskAction(input: FormData | Record<string, unknown>
 
   if (!title) {
     throw new Error("Task title is required");
+  }
+
+  if (branchId) {
+    const brCheck = await assertBranchExists(supabase, branchId);
+    if (!brCheck.ok) {
+      throw new Error(brCheck.message);
+    }
+  }
+
+  if (subBranchId) {
+    const check = await assertSubBranchExists(supabase, subBranchId);
+    if (!check.ok) {
+      throw new Error(check.message);
+    }
   }
 
   /* 🔥 CRITICAL FIX: created_by added */
@@ -508,15 +524,15 @@ export async function deleteTask(formData: FormData): Promise<DeleteTaskResult> 
       return { error: "Only admins and branch leads can delete tasks" };
     }
 
+    const { data: row, error: fetchErr } = await supabase
+      .from("tasks")
+      .select("branch_id, attachment_path, branch:branches(name)")
+      .eq("id", taskId)
+      .single();
+
+    if (fetchErr || !row) return { error: "Task not found" };
+
     if (profile.role === "branch_lead") {
-      const { data: row, error: fetchErr } = await supabase
-        .from("tasks")
-        .select("branch_id, branch:branches(name)")
-        .eq("id", taskId)
-        .single();
-
-      if (fetchErr || !row) return { error: "Task not found" };
-
       const br = row.branch as { name: string } | { name: string }[] | null;
       const branchName = Array.isArray(br) ? br[0]?.name : br?.name;
       const userBranch = profile.branch ?? null;
@@ -539,6 +555,8 @@ export async function deleteTask(formData: FormData): Promise<DeleteTaskResult> 
           "Could not remove payroll lines for this task. Check database permissions.",
       };
     }
+
+    await removeTaskAttachmentStorage(supabase, row.attachment_path as string | null | undefined);
 
     const { error } = await supabase.from("tasks").delete().eq("id", taskId);
 

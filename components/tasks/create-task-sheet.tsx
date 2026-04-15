@@ -10,23 +10,18 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus, Loader2, ShieldCheck } from "lucide-react";
+import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
 
 interface Branch {
   id: string;
   name: string;
 }
 
-interface SubBranch {
-  id: string;
-  name: string;
-  branch_id: string | null;
-}
-
 interface CreateTaskSheetProps {
   /** When false, button still shows; dialog explains that only admins/managers can create. */
   canCreate: boolean;
   branches: Branch[];
-  subBranches: SubBranch[];
+  subBranches: SubBranchRow[];
 }
 
 export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTaskSheetProps) {
@@ -37,30 +32,17 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
   const [selectedBranch, setSelectedBranch] = useState("");
   const [isAdminOnly, setIsAdminOnly] = useState(false);
 
-  const filteredSubs = selectedBranch
-    ? subBranches.filter((s) => s.branch_id === selectedBranch)
-    : subBranches;
-
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitError(null);
     setPending(true);
     try {
       const fd = new FormData(e.currentTarget);
-      const payload = {
-        title: String(fd.get("title") ?? "").trim(),
-        description: String(fd.get("description") ?? "").trim() || null,
-        branchId: String(fd.get("branchId") ?? "").trim() || null,
-        subBranchId: String(fd.get("subBranchId") ?? "").trim() || null,
-        assignedHours: Number(fd.get("assignedHours")) || 1,
-        dueDate: String(fd.get("dueDate") ?? "").trim() || null,
-        is_admin: isAdminOnly,
-      };
+      fd.set("is_admin", isAdminOnly ? "true" : "false");
 
       const res = await fetch("/api/tasks/create-tasks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: fd,
         credentials: "same-origin",
       });
 
@@ -168,16 +150,19 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
 
               <div>
                 <label htmlFor="ct-sub" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
-                  Sub-branch
+                  Sub-branch <span className="font-normal text-[#001A3D]/45">(optional)</span>
                 </label>
                 <select
                   id="ct-sub"
                   name="subBranchId"
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+                  title="Optional"
                 >
                   <option value="">None</option>
-                  {filteredSubs.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
+                  {subBranches.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -212,6 +197,19 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                 />
               </div>
             </div>
+            <div>
+              <label htmlFor="ct-file" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
+                Attachment (optional)
+              </label>
+              <input
+                id="ct-file"
+                name="attachment"
+                type="file"
+                className="w-full text-sm text-[#001A3D] file:mr-3 file:rounded-lg file:border-0 file:bg-[#001A3D]/8 file:px-3 file:py-2 file:text-xs file:font-medium file:text-[#001A3D]"
+              />
+              <p className="mt-1 text-xs text-[#001A3D]/45">Max 15 MB.</p>
+            </div>
+
             <div className="flex items-center gap-3 rounded-xl bg-[#f8f9fa] px-4 py-3">
               <button
                 type="button"

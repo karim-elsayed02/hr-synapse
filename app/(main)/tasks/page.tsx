@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAllowedBranchName, isAllowedSubBranchName } from "@/lib/utils/org-structure";
+import { isAllowedBranchName } from "@/lib/utils/org-structure";
 import {
   approveTask,
   assignTaskToUser,
@@ -12,7 +12,11 @@ import {
 } from "@/lib/actions/task-actions";
 import { CreateTaskSheet } from "@/components/tasks/create-task-sheet";
 import { DeleteTaskButton } from "@/components/tasks/delete-task-button";
+import { EditTaskDialog } from "@/components/tasks/edit-task-dialog";
+import { TaskAttachmentPreview } from "@/components/tasks/task-attachment-preview";
 import { RecentTaskLogs } from "@/components/tasks/recent-task-logs";
+import { attachmentFileLabel } from "@/lib/task-attachments";
+import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
 import { CalendarDays, SlidersHorizontal, ShieldCheck } from "lucide-react";
 
 type TaskRow = {
@@ -26,6 +30,7 @@ type TaskRow = {
   claimed_by: string | null;
   branch_id: string | null;
   sub_branch_id: string | null;
+  attachment_path: string | null;
   is_admin: boolean;
   branch: { id: string; name: string } | { id: string; name: string }[] | null;
   sub_branch: { id: string; name: string } | { id: string; name: string }[] | null;
@@ -36,7 +41,6 @@ type TaskRow = {
 };
 
 type BranchRow = { id: string; name: string };
-type SubBranchRow = { id: string; name: string; branch_id: string | null };
 
 function rel<T>(value: T | T[] | null): T | null {
   if (!value) return null;
@@ -104,14 +108,14 @@ export default async function TasksPage() {
         .from("tasks")
         .select(`
           id, title, description, assigned_hours, status, due_date,
-          created_at, claimed_by, branch_id, sub_branch_id, is_admin,
+          created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin,
           branch:branches(id, name),
           sub_branch:sub_branches(id, name),
           claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
         `)
         .order("created_at", { ascending: false }),
       supabase.from("branches").select("id, name").order("name"),
-      supabase.from("sub_branches").select("id, name, branch_id").order("name"),
+      supabase.from("sub_branches").select("id, name").order("name"),
     ]);
 
   if (taskError) {
@@ -127,9 +131,7 @@ export default async function TasksPage() {
   const branches = ((branchData ?? []) as unknown as BranchRow[]).filter((b) =>
     isAllowedBranchName(b.name)
   );
-  const subBranches = ((subBranchData ?? []) as unknown as SubBranchRow[]).filter((s) =>
-    isAllowedSubBranchName(s.name)
-  );
+  const subBranches = (subBranchData ?? []) as unknown as SubBranchRow[];
 
   const isAdmin = profile.role === "admin";
   const isBranchLead = profile.role === "branch_lead";
@@ -335,6 +337,9 @@ function TaskCard({
     !isLocked &&
     (task.status === "claimed" || task.status === "in_progress" || task.status === "cancelled");
   const canReopenCompleted = isManager && task.status === "completed";
+  const canEditDetails = isManager && !isTerminal && task.status !== "approved";
+
+  const attachmentLabel = attachmentFileLabel(task.attachment_path);
 
   const hasAction =
     canClaim ||
@@ -375,6 +380,29 @@ function TaskCard({
         <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-[#001A3D]/55">
           {task.description}
         </p>
+      )}
+
+      {task.attachment_path && (
+        <TaskAttachmentPreview
+          taskId={task.id}
+          attachmentPath={task.attachment_path}
+          label={attachmentLabel}
+        />
+      )}
+
+      {canEditDetails && (
+        <div className="mt-3">
+          <EditTaskDialog
+            task={{
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              due_date: task.due_date,
+              assigned_hours: task.assigned_hours,
+              attachment_path: task.attachment_path,
+            }}
+          />
+        </div>
       )}
 
       {/* Progress */}

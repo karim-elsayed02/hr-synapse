@@ -1,0 +1,2 @@
+-- `public.sub_branches` is a flat list (id, name, …) with no FK to `branches`.
+-- The app lists every sub-branch on the create-task form; branch and sub-branch are independent optional fields on `tasks`.
