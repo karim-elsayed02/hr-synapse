@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { attachSignedDownloadUrls } from "@/lib/documents-download-urls";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export async function GET() {
     .from("documents")
     .select("*")
     .eq("user_id", user.id)
+    .eq("scope", "employee")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -26,13 +28,7 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to fetch my documents" }, { status: 500 });
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const enriched = (data ?? []).map((doc: Record<string, unknown>) => ({
-    ...doc,
-    download_url: supabaseUrl
-      ? `${supabaseUrl}/storage/v1/object/public/${doc.storage_bucket}/${doc.storage_path}`
-      : null,
-  }));
+  const enriched = await attachSignedDownloadUrls(supabase, (data ?? []) as Record<string, unknown>[]);
 
   return NextResponse.json(enriched);
 }

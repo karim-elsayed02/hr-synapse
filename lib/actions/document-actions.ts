@@ -1,5 +1,6 @@
 "use server";
 
+import { attachSignedDownloadUrls } from "@/lib/documents-download-urls";
 import { createClient } from "@/lib/supabase/server";
 
 export async function getDocumentsAction() {
@@ -17,11 +18,5 @@ export async function getDocumentsAction() {
 
   if (error) throw new Error("Failed to fetch documents");
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return (documents ?? []).map((doc: Record<string, unknown>) => ({
-    ...doc,
-    download_url: supabaseUrl
-      ? `${supabaseUrl}/storage/v1/object/public/${doc.storage_bucket}/${doc.storage_path}`
-      : null,
-  }));
+  return attachSignedDownloadUrls(supabase, (documents ?? []) as Record<string, unknown>[]);
 }
