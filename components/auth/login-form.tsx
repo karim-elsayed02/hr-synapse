@@ -6,15 +6,17 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/hooks/use-auth"
-import { Loader2 } from "lucide-react"
+import { Loader2, UserX } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  /** Shown in a dedicated banner (not the generic red error) */
+  const [deactivatedMessage, setDeactivatedMessage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
   const { login } = useAuth()
@@ -23,6 +25,7 @@ export function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+    setDeactivatedMessage(null)
     setIsLoading(true)
 
     if (!email || !password) {
@@ -36,7 +39,16 @@ export function LoginForm() {
     if (result.success) {
       router.push("/dashboard")
     } else {
-      setError(result.error || "Invalid email or password. Please try again.")
+      const msg =
+        (result.error && result.error.trim()) ||
+        "Could not sign in. Please try again."
+      if ("deactivated" in result && result.deactivated === true) {
+        setDeactivatedMessage(msg)
+        setError("")
+      } else {
+        setError(msg)
+        setDeactivatedMessage(null)
+      }
     }
 
     setIsLoading(false)
@@ -58,6 +70,27 @@ export function LoginForm() {
 
           <div className="px-8 pb-10 pt-4">
             <form onSubmit={handleSubmit} className="space-y-5">
+              {deactivatedMessage ? (
+                <Alert
+                  className="rounded-xl border-amber-300/90 bg-amber-50 text-amber-950 shadow-sm [&>svg]:text-amber-800"
+                  role="alert"
+                >
+                  <UserX className="shrink-0" aria-hidden />
+                  <AlertTitle className="text-base font-semibold text-amber-950">
+                    Account deactivated
+                  </AlertTitle>
+                  <AlertDescription className="text-sm leading-relaxed text-amber-950/90">
+                    {deactivatedMessage}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {error && !deactivatedMessage ? (
+                <Alert variant="destructive" className="rounded-xl border-red-200 bg-red-50">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-[#001A3D]/80">
                   Email
@@ -95,12 +128,6 @@ export function LoginForm() {
                   className="h-12 rounded-xl border-[#001A3D]/10 bg-[#f8f9fa] text-[#001A3D] focus-visible:ring-[#FFB84D]/50"
                 />
               </div>
-
-              {error && (
-                <Alert variant="destructive" className="rounded-xl border-red-200 bg-red-50">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
 
               <Button
                 type="submit"

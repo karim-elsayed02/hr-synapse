@@ -13,6 +13,8 @@ export type StaffRow = {
   emergency_contact: string | null;
   hourly_rate: number | null;
   avatar_path: string | null;
+  /** false = cannot sign in; omitted/null treated as active */
+  active?: boolean | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -39,7 +41,7 @@ export default async function StaffPage({ searchParams }: StaffPageProps) {
   const { data: staff, error } = await supabase
     .from("profiles")
     .select(
-      "id, full_name, email, role, branch, department, phone, emergency_contact, hourly_rate, avatar_path, created_at, updated_at"
+      "id, full_name, email, role, branch, department, phone, emergency_contact, hourly_rate, avatar_path, active, created_at, updated_at"
     )
     .order("full_name", { ascending: true });
 

@@ -10,7 +10,9 @@ import {
   MapPin,
   MoreHorizontal,
   UserPlus,
+  UserX,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getAvatarUrl } from "@/lib/utils/avatar";
 import { Button } from "@/components/ui/button";
@@ -72,6 +74,41 @@ type CreateStaffPayload = {
 
 const PAGE_SIZE = 8;
 
+function isStaffRowActive(person: StaffRow): boolean {
+  return person.active !== false;
+}
+
+function applyStaffDirectoryFilters(
+  person: StaffRow,
+  query: string,
+  branchFilter: string,
+  subBranchFilter: string,
+  roleFilter: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  const synId = syntheticStaffId(person.id).toLowerCase();
+  const matchesQuery =
+    !q ||
+    (person.full_name ?? "").toLowerCase().includes(q) ||
+    (person.email ?? "").toLowerCase().includes(q) ||
+    (person.role ?? "").toLowerCase().includes(q) ||
+    (person.branch ?? "").toLowerCase().includes(q) ||
+    (person.department ?? "").toLowerCase().includes(q) ||
+    formatBranchLabel(person.branch).toLowerCase().includes(q) ||
+    formatSubBranchLabel(person.department).toLowerCase().includes(q) ||
+    person.id.toLowerCase().includes(q) ||
+    synId.includes(q);
+
+  const bSlug = normalizeBranchSlug(person.branch ?? "");
+  const sSlug = normalizeSubBranchSlug(person.department ?? "");
+  const matchesBranch = branchFilter === "all" || bSlug === branchFilter;
+  const matchesSubBranch = subBranchFilter === "all" || sSlug === subBranchFilter;
+
+  const matchesRole = roleFilter === "all" || (person.role ?? "staff") === roleFilter;
+
+  return matchesQuery && matchesBranch && matchesSubBranch && matchesRole;
+}
+
 function initials(name: string | null) {
   if (!name?.trim()) return "?";
   const parts = name.trim().split(/\s+/);
@@ -127,6 +164,7 @@ function exportStaffCsv(rows: StaffRow[]) {
     "Sub-branch",
     "Hourly rate (GBP)",
     "Phone",
+    "Active",
     "ID",
   ];
   const escape = (v: string | null | undefined) => {
@@ -148,6 +186,7 @@ function exportStaffCsv(rows: StaffRow[]) {
             : ""
         ),
         escape(p.phone),
+        escape(isStaffRowActive(p) ? "Yes" : "No"),
         escape(p.id),
       ].join(",")
     ),
@@ -181,6 +220,7 @@ export default function StaffDirectoryClient({
   initialOpenAddStaff = false,
 }: Props) {
   const router = useRouter();
+  const { user: authUser } = useAuth();
   const [staff, setStaff] = useState<StaffRow[]>(initialStaff);
   const [query, setQuery] = useState("");
   const [branchFilter, setBranchFilter] = useState<string>("all");
@@ -221,33 +261,26 @@ export default function StaffDirectoryClient({
     router.replace(`/staff${next ? `?${next}` : ""}`, { scroll: false });
   }, [initialOpenAddStaff, canManageStaff, router]);
 
+  const activeStaffMembers = useMemo(
+    () => staff.filter((p) => isStaffRowActive(p)),
+    [staff]
+  );
+  const inactiveStaffMembers = useMemo(
+    () => staff.filter((p) => !isStaffRowActive(p)),
+    [staff]
+  );
+
   const filteredStaff = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return staff.filter((person) => {
-      const synId = syntheticStaffId(person.id).toLowerCase();
-      const matchesQuery =
-        !q ||
-        (person.full_name ?? "").toLowerCase().includes(q) ||
-        (person.email ?? "").toLowerCase().includes(q) ||
-        (person.role ?? "").toLowerCase().includes(q) ||
-        (person.branch ?? "").toLowerCase().includes(q) ||
-        (person.department ?? "").toLowerCase().includes(q) ||
-        formatBranchLabel(person.branch).toLowerCase().includes(q) ||
-        formatSubBranchLabel(person.department).toLowerCase().includes(q) ||
-        person.id.toLowerCase().includes(q) ||
-        synId.includes(q);
+    return activeStaffMembers.filter((person) =>
+      applyStaffDirectoryFilters(person, query, branchFilter, subBranchFilter, roleFilter)
+    );
+  }, [activeStaffMembers, query, branchFilter, subBranchFilter, roleFilter]);
 
-      const bSlug = normalizeBranchSlug(person.branch ?? "");
-      const sSlug = normalizeSubBranchSlug(person.department ?? "");
-      const matchesBranch = branchFilter === "all" || bSlug === branchFilter;
-      const matchesSubBranch = subBranchFilter === "all" || sSlug === subBranchFilter;
-
-      const matchesRole =
-        roleFilter === "all" || (person.role ?? "staff") === roleFilter;
-
-      return matchesQuery && matchesBranch && matchesSubBranch && matchesRole;
-    });
-  }, [staff, query, branchFilter, subBranchFilter, roleFilter]);
+  const filteredInactiveStaff = useMemo(() => {
+    return inactiveStaffMembers.filter((person) =>
+      applyStaffDirectoryFilters(person, query, branchFilter, subBranchFilter, roleFilter)
+    );
+  }, [inactiveStaffMembers, query, branchFilter, subBranchFilter, roleFilter]);
 
   const totalFiltered = filteredStaff.length;
   const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
@@ -262,22 +295,35 @@ export default function StaffDirectoryClient({
 
   const newHires = useMemo(() => {
     const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
-    return staff.filter((s) => s.created_at && new Date(s.created_at).getTime() > cutoff).length;
-  }, [staff]);
+    return activeStaffMembers.filter(
+      (s) => s.created_at && new Date(s.created_at).getTime() > cutoff
+    ).length;
+  }, [activeStaffMembers]);
 
   const onLeaveDisplay = useMemo(() => {
-    if (staff.length === 0) return 0;
-    return Math.min(staff.length, Math.max(0, Math.round(staff.length * 0.08)));
-  }, [staff.length]);
+    if (activeStaffMembers.length === 0) return 0;
+    return Math.min(
+      activeStaffMembers.length,
+      Math.max(0, Math.round(activeStaffMembers.length * 0.08))
+    );
+  }, [activeStaffMembers.length]);
 
   const activePulsePercent = useMemo(() => {
-    if (staff.length === 0) return 0;
-    return Math.min(100, Math.max(55, Math.round(((staff.length - onLeaveDisplay) / staff.length) * 100)));
-  }, [staff.length, onLeaveDisplay]);
+    if (activeStaffMembers.length === 0) return 0;
+    return Math.min(
+      100,
+      Math.max(
+        55,
+        Math.round(
+          ((activeStaffMembers.length - onLeaveDisplay) / activeStaffMembers.length) * 100
+        )
+      )
+    );
+  }, [activeStaffMembers.length, onLeaveDisplay]);
 
   const branchConcentration = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const p of staff) {
+    for (const p of activeStaffMembers) {
       const label = formatBranchLabel(p.branch);
       const b = label === "—" ? "Unassigned" : label;
       counts.set(b, (counts.get(b) ?? 0) + 1);
@@ -290,9 +336,11 @@ export default function StaffDirectoryClient({
         topN = n;
       }
     }
-    const pct = staff.length ? Math.round((topN / staff.length) * 100) : 0;
+    const pct = activeStaffMembers.length
+      ? Math.round((topN / activeStaffMembers.length) * 100)
+      : 0;
     return { branch: top || "—", percent: pct };
-  }, [staff]);
+  }, [activeStaffMembers]);
 
   async function refreshStaff() {
     const res = await fetch("/api/staff", { cache: "no-store" });
@@ -387,6 +435,32 @@ export default function StaffDirectoryClient({
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "Failed to delete staff");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSetStaffActive(id: string, active: boolean, name: string | null) {
+    const verb = active ? "Activate" : "Deactivate";
+    const confirmed = window.confirm(
+      `${verb} ${name || "this user"}? ${
+        active ? "They will be able to sign in again." : "They will be signed out and cannot sign in until reactivated."
+      }`
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/staff/active", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, active }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update account");
+      await refreshStaff();
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to update account");
     } finally {
       setLoading(false);
     }
@@ -723,14 +797,24 @@ export default function StaffDirectoryClient({
             Staff Directory
           </h1>
           <p className="mt-2 text-sm text-[#001A3D]/55">
-            Workforce management <span className="text-[#001A3D]/35">•</span>{" "}
-            <span className="font-medium text-[#001A3D]/70">{staff.length}</span> total members
+            <span className="font-medium text-[#001A3D]/70">{activeStaffMembers.length}</span> active
+            {inactiveStaffMembers.length > 0 ? (
+              <>
+                {" "}
+                <span className="text-[#001A3D]/35">•</span>{" "}
+                <span className="font-medium text-[#001A3D]/50">
+                  {inactiveStaffMembers.length} inactive
+                </span>
+              </>
+            ) : null}{" "}
+            <span className="text-[#001A3D]/35">•</span>{" "}
+            <span className="text-[#001A3D]/45">{staff.length} total</span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => exportStaffCsv(filteredStaff)}
+            onClick={() => exportStaffCsv(staff)}
             className="inline-flex h-11 items-center gap-2 rounded-[var(--curator-radius-xl)] border border-[#001A3D]/15 bg-white px-5 text-sm font-semibold text-[#001A3D] shadow-[var(--curator-shadow)] transition hover:bg-[#f8f9fa]"
           >
             <Download className="h-4 w-4" strokeWidth={2} />
@@ -830,7 +914,12 @@ export default function StaffDirectoryClient({
             </div>
           </div>
 
-          {/* Table */}
+          <div className="px-1">
+            <h2 className="font-display text-lg font-semibold text-[#001A3D]">Active accounts</h2>
+            <p className="text-xs text-[#001A3D]/50">Members who can sign in</p>
+          </div>
+
+          {/* Table — active */}
           <div className="curator-card overflow-hidden shadow-[var(--curator-shadow)]">
             <div className="overflow-x-auto">
               <table className="min-w-[980px] w-full border-collapse">
@@ -934,6 +1023,19 @@ export default function StaffDirectoryClient({
                                   <DropdownMenuItem onClick={() => setEditStaffTarget(person)}>
                                     Edit
                                   </DropdownMenuItem>
+                                  {isStaffRowActive(person) && person.id !== authUser?.id ? (
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        void handleSetStaffActive(
+                                          person.id,
+                                          false,
+                                          person.full_name
+                                        )
+                                      }
+                                    >
+                                      Deactivate account
+                                    </DropdownMenuItem>
+                                  ) : null}
                                   <DropdownMenuItem
                                     className="text-red-600 focus:text-red-600"
                                     onClick={() =>
@@ -993,6 +1095,155 @@ export default function StaffDirectoryClient({
               </div>
             ) : null}
           </div>
+
+          {inactiveStaffMembers.length > 0 ? (
+            <>
+              <div className="mt-10 flex items-center gap-2 px-1">
+                <UserX className="h-5 w-5 shrink-0 text-[#001A3D]/40" />
+                <div>
+                  <h2 className="font-display text-lg font-semibold text-[#001A3D]">
+                    Inactive accounts
+                  </h2>
+                  <p className="text-xs text-[#001A3D]/50">
+                    Sign-in disabled — same filters apply as above
+                  </p>
+                </div>
+              </div>
+              <div className="curator-card overflow-hidden shadow-[var(--curator-shadow)]">
+                <div className="overflow-x-auto">
+                  <table className="min-w-[980px] w-full border-collapse">
+                    <thead>
+                      <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-[#001A3D]/45">
+                        <th className="px-6 py-4">Staff member</th>
+                        <th className="px-4 py-4">Role</th>
+                        <th className="px-4 py-4">Branch</th>
+                        <th className="px-4 py-4">Sub-branch</th>
+                        <th className="px-4 py-4">Rate / hr</th>
+                        <th className="min-w-[180px] px-4 py-4">Contact details</th>
+                        {canManageStaff ? <th className="w-12 px-4 py-4" /> : null}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#001A3D]/[0.04]">
+                      {filteredInactiveStaff.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={canManageStaff ? 7 : 6}
+                            className="px-6 py-12 text-center text-sm text-[#001A3D]/50"
+                          >
+                            No inactive staff match your current filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredInactiveStaff.map((person) => {
+                          const syn = syntheticStaffId(person.id);
+                          const avatarSrc = getAvatarUrl(person.avatar_path);
+                          return (
+                            <tr
+                              key={person.id}
+                              className="bg-[#f8f9fa]/80 transition-colors hover:bg-[#f3f4f5]"
+                            >
+                              <td className="px-6 py-4 align-middle">
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-11 w-11 ring-2 ring-white opacity-90 shadow-sm">
+                                    {avatarSrc ? (
+                                      <AvatarImage src={avatarSrc} alt="" />
+                                    ) : null}
+                                    <AvatarFallback className="bg-gradient-to-br from-[#001A3D] to-[#011b3e] text-xs font-semibold text-[#FFB84D]">
+                                      {initials(person.full_name)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-[#001A3D]/80">
+                                      {person.full_name?.trim() || "Unnamed user"}
+                                    </p>
+                                    <p className="text-xs text-[#001A3D]/45">ID: {syn}</p>
+                                    <span className="mt-0.5 inline-flex rounded-full bg-[#001A3D]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#001A3D]/60">
+                                      Inactive
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 align-middle">
+                                <span
+                                  className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person.role)}`}
+                                >
+                                  {roleLabel(person.role)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 align-middle">
+                                <span className="inline-flex items-center gap-1.5 text-sm text-[#001A3D]/70">
+                                  <MapPin className="h-3.5 w-3.5 shrink-0 text-[#4DB8FF]" />
+                                  {formatBranchLabel(person.branch)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 align-middle">
+                                <span className="text-sm text-[#001A3D]/70">
+                                  {formatSubBranchLabel(person.department)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-4 align-middle text-sm tabular-nums text-[#001A3D]/75">
+                                {formatGbpHourly(person.hourly_rate)}
+                              </td>
+                              <td className="px-4 py-4 align-middle text-sm">
+                                <div className="space-y-0.5">
+                                  <p className="truncate text-[#001A3D]/75">{person.email || "—"}</p>
+                                  <p className="text-xs text-[#001A3D]/45">{person.phone || "—"}</p>
+                                </div>
+                              </td>
+                              {canManageStaff ? (
+                                <td className="px-4 py-4 align-middle text-right">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-9 w-9 rounded-full text-[#001A3D]/50 hover:bg-[#f3f4f5] hover:text-[#001A3D]"
+                                      >
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="rounded-2xl">
+                                      <DropdownMenuItem asChild>
+                                        <Link href={`/profile/${person.id}`}>View profile</Link>
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => setEditStaffTarget(person)}
+                                      >
+                                        Edit
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          void handleSetStaffActive(
+                                            person.id,
+                                            true,
+                                            person.full_name
+                                          )
+                                        }
+                                      >
+                                        Activate account
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        className="text-red-600 focus:text-red-600"
+                                        onClick={() =>
+                                          handleDeleteStaff(person.id, person.full_name)
+                                        }
+                                      >
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </td>
+                              ) : null}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : null}
 
           <p className="text-center text-xs text-[#001A3D]/40">
             Your role: <span className="font-medium text-[#001A3D]/60">{currentUserRole}</span>

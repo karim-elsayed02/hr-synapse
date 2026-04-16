@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createUserClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { isStaffProfileRole } from "@/lib/utils/permissions";
 import { validateProfileBranchDept } from "@/lib/utils/org-structure";
 
@@ -20,22 +20,6 @@ function parseHourlyRate(
     return { ok: false, error: "Hourly rate cannot be negative" };
   }
   return { ok: true, value: n };
-}
-
-function getServiceRoleClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  }
-
-  return createAdminClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
 }
 
 /** Invite link must match Supabase Auth → URL configuration redirect allowlist. */
@@ -88,7 +72,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "id, full_name, email, role, branch, department, phone, emergency_contact, hourly_rate, avatar_path, created_at, updated_at"
+        "id, full_name, email, role, branch, department, phone, emergency_contact, hourly_rate, avatar_path, active, created_at, updated_at"
       )
       .order("full_name", { ascending: true });
 
@@ -182,6 +166,7 @@ export async function POST(request: NextRequest) {
         phone,
         emergency_contact,
         hourly_rate: rateParsed.value,
+        active: true,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }
@@ -422,6 +407,7 @@ export async function PUT(request: NextRequest) {
         phone,
         emergency_contact,
         hourly_rate: rateParsed.value,
+        active: true,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "id" }

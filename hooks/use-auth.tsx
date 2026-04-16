@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -24,6 +25,8 @@ type AuthProfile = {
   role: string | null;
   branch: string | null;
   department: string | null;
+  /** false = cannot use the app; enforced after auth */
+  active: boolean;
   phone?: string | null;
   emergency_contact?: string | null;
   branch_id?: string | null;
@@ -40,6 +43,10 @@ type LoginInput = {
 
 type UpdateProfileInput = Partial<AuthProfile>;
 
+export type LoginResult =
+  | { success: true }
+  | { success: false; error: string; deactivated?: boolean };
+
 type AuthContextValue = {
   user: AuthUser | null;
   profile: AuthProfile | null;
@@ -47,7 +54,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isManager: boolean;
-  login: (input: LoginInput) => Promise<{ success: boolean; error?: string }>;
+  login: (input: LoginInput) => Promise<LoginResult>;
   logout: () => void;
   refreshSession: () => Promise<void>;
   updateProfile: (
@@ -64,7 +71,7 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
     supabase
       .from("profiles")
       .select(
-        "id, email, full_name, role, branch, department, phone, emergency_contact, avatar_path, hourly_rate, created_at, updated_at"
+        "id, email, full_name, role, branch, department, phone, emergency_contact, avatar_path, hourly_rate, active, created_at, updated_at"
       )
       .eq("id", userId)
       .maybeSingle(),
@@ -89,6 +96,9 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
     updated_at?: string | null;
   };
 
+  const rawActive = (data as { active?: boolean | null }).active;
+  const active = rawActive !== false;
+
   return {
     id: data.id,
     email: data.email ?? null,
@@ -96,6 +106,7 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
     role: data.role ?? "staff",
     branch: data.branch ?? null,
     department: data.department ?? null,
+    active,
     phone: data.phone ?? null,
     emergency_contact: data.emergency_contact ?? null,
     branch_id: null,
@@ -107,12 +118,29 @@ async function loadProfile(userId: string): Promise<AuthProfile | null> {
   };
 }
 
+/** When full profile load fails, still detect deactivated accounts via `active` only. */
+async function loadProfileActiveFlag(
+  supabase: ReturnType<typeof createClient>,
+  userId: string
+): Promise<boolean | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("active")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { active?: boolean | null }).active !== false;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /** Prevents onAuthStateChange from racing signInWithPassword (would clear session / confuse inactive check). */
+  const loginPendingRef = useRef(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -137,6 +165,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const nextProfile = await loadProfile(session.user.id);
 
+      if (nextProfile && nextProfile.active === false) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+        return;
+      }
+
       setUser(nextUser);
       setProfile(
         nextProfile ?? {
@@ -146,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: "staff",
           branch: null,
           department: null,
+          active: true,
           phone: null,
           emergency_contact: null,
           branch_id: null,
@@ -177,6 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: "staff",
       branch: null,
       department: null,
+      active: true,
       phone: null,
       emergency_contact: null,
       branch_id: null,
@@ -211,6 +248,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const nextProfile = await loadProfile(session.user.id);
           if (!mounted) return;
+          if (nextProfile && nextProfile.active === false) {
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            setLoading(false);
+            return;
+          }
           setProfile(nextProfile ?? makeFallback(session.user));
         } catch (profileErr) {
           console.error("Auth bootstrap: profile fetch failed:", profileErr);
@@ -237,6 +281,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
+      if (loginPendingRef.current) {
+        return;
+      }
+
       if (event === "INITIAL_SESSION") return;
 
       if (event === "TOKEN_REFRESHED" && session?.user?.id === currentUserId) return;
@@ -260,7 +308,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const nextProfile = await loadProfile(session.user.id);
-        if (mounted) setProfile(nextProfile ?? makeFallback(session.user));
+        if (!mounted) return;
+        if (nextProfile && nextProfile.active === false) {
+          await supabase.auth.signOut();
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+        setProfile(nextProfile ?? makeFallback(session.user));
       } catch {
         if (mounted) setProfile(makeFallback(session.user));
       } finally {
@@ -276,6 +332,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async ({ email, password }: LoginInput) => {
+      loginPendingRef.current = true;
       try {
         const supabase = createClient();
 
@@ -291,12 +348,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
         }
 
+        const nextProfile = await loadProfile(data.user.id);
+        const isInactive =
+          nextProfile != null
+            ? nextProfile.active === false
+            : (await loadProfileActiveFlag(supabase, data.user.id)) === false;
+
+        if (isInactive) {
+          await supabase.auth.signOut({ scope: "global" });
+          setUser(null);
+          setProfile(null);
+          return {
+            success: false,
+            deactivated: true,
+            error:
+              "This account has been deactivated. You cannot sign in until an administrator reactivates it. If you think this is wrong, contact your HR or IT administrator.",
+          };
+        }
+
         setUser({
           id: data.user.id,
           email: data.user.email ?? null,
         });
 
-        const nextProfile = await loadProfile(data.user.id);
         setProfile(
           nextProfile ?? {
             id: data.user.id,
@@ -305,6 +379,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             role: "staff",
             branch: null,
             department: null,
+            active: true,
             phone: null,
             emergency_contact: null,
             branch_id: null,
@@ -324,6 +399,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           success: false,
           error: error instanceof Error ? error.message : "Login failed",
         };
+      } finally {
+        loginPendingRef.current = false;
       }
     },
     [router]
@@ -370,7 +447,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .update(payload)
           .eq("id", user.id)
           .select(
-            "id, email, full_name, role, branch, department, phone, emergency_contact, avatar_path, hourly_rate, created_at, updated_at"
+            "id, email, full_name, role, branch, department, phone, emergency_contact, avatar_path, hourly_rate, active, created_at, updated_at"
           )
           .maybeSingle();
 
@@ -380,6 +457,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (data) {
           const row = data as {
+            active?: boolean | null;
             created_at?: string | null;
             updated_at?: string | null;
           };
@@ -390,6 +468,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             role: data.role ?? "staff",
             branch: data.branch ?? null,
             department: data.department ?? null,
+            active: row.active !== false,
             phone: data.phone ?? null,
             emergency_contact: data.emergency_contact ?? null,
             branch_id: null,
