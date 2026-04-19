@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAllowedBranchName } from "@/lib/utils/org-structure";
+import { isAllowedBranchName, isAllowedSubBranchName } from "@/lib/utils/org-structure";
 import {
   approveTask,
   assignTaskToUser,
@@ -131,7 +131,9 @@ export default async function TasksPage() {
   const branches = ((branchData ?? []) as unknown as BranchRow[]).filter((b) =>
     isAllowedBranchName(b.name)
   );
-  const subBranches = (subBranchData ?? []) as unknown as SubBranchRow[];
+  const subBranches = ((subBranchData ?? []) as unknown as SubBranchRow[]).filter((s) =>
+    isAllowedSubBranchName(s.name)
+  );
 
   const isAdmin = profile.role === "admin";
   const isBranchLead = profile.role === "branch_lead";

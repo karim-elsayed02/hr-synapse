@@ -1,60 +1,62 @@
 /**
- * Canonical org structure for SynapseUK profiles (`branch` + `department` columns).
- * Stored values are lowercase slugs; use formatters for display.
+ * Canonical org structure for SynapseUK profiles (`branch` + `department` columns)
+ * and task branch / sub-branch allowlists (matched against `branches.name` / `sub_branches.name`).
+ * Stored profile values are lowercase slugs; use formatters for display.
+ *
+ * Branches: Executives, Admissions, Work Experience, Tutoring, Education, Social Media.
+ * Sub-branches: Medical, Dental only.
+ *
+ * Keep rows in Supabase `branches` / `sub_branches` aligned with these names so slugify(name)
+ * matches (e.g. "Work Experience" → work_experience).
  */
 
 export const BRANCH_SLUGS = [
-  "medical",
-  "dental",
   "executives",
+  "admissions",
+  "work_experience",
   "tutoring",
+  "education",
   "social_media",
 ] as const;
 export type BranchSlug = (typeof BRANCH_SLUGS)[number];
 
-export const SUB_BRANCH_SLUGS = [
-  "events",
-  "work_experience",
-  "admissions",
-  "education",
-] as const;
+export const SUB_BRANCH_SLUGS = ["medical", "dental"] as const;
 export type SubBranchSlug = (typeof SUB_BRANCH_SLUGS)[number];
 
 const BRANCH_SET = new Set<string>(BRANCH_SLUGS);
 const SUB_BRANCH_SET = new Set<string>(SUB_BRANCH_SLUGS);
 
 export const BRANCH_LABELS: Record<BranchSlug, string> = {
-  medical: "Medical",
-  dental: "Dental",
   executives: "Executives",
+  admissions: "Admissions",
+  work_experience: "Work Experience",
   tutoring: "Tutoring",
-  social_media: "Social media",
+  education: "Education",
+  social_media: "Social Media",
 };
 
 export const SUB_BRANCH_LABELS: Record<SubBranchSlug, string> = {
-  events: "Events",
-  work_experience: "Work experience",
-  admissions: "Admissions",
-  education: "Education",
+  medical: "Medical",
+  dental: "Dental",
 };
 
 /** Map common legacy / human text to branch slug */
 const BRANCH_ALIASES: Record<string, BranchSlug> = {
-  medical: "medical",
-  dental: "dental",
-  executive: "executives",
   executives: "executives",
+  executive: "executives",
+  admissions: "admissions",
+  admission: "admissions",
+  work_experience: "work_experience",
+  workexperience: "work_experience",
   tutoring: "tutoring",
+  education: "education",
   social_media: "social_media",
   socialmedia: "social_media",
 };
 
 const SUB_BRANCH_ALIASES: Record<string, SubBranchSlug> = {
-  events: "events",
-  work_experience: "work_experience",
-  workexperience: "work_experience",
-  admissions: "admissions",
-  education: "education",
+  medical: "medical",
+  dental: "dental",
 };
 
 function slugify(s: string): string {
