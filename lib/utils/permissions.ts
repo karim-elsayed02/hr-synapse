@@ -87,6 +87,11 @@ export function canMakeAnnouncements(user: User): boolean {
   return isExecutiveTeam(user) || isBranchLead(user)
 }
 
+/** Staff work log (timesheet diary) — admins and branch leads only. */
+export function canAccessStaffWorkLog(role: string | null | undefined): boolean {
+  return role === "admin" || role === "branch_lead"
+}
+
 export function canViewBranchStaff(user: User, targetBranch?: string): boolean {
   if (isExecutiveTeam(user)) return true
   if (isBranchLead(user) && user.branch === targetBranch) return true

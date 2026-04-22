@@ -22,6 +22,7 @@ import {
   LogOut,
   Menu,
   X,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react"
 
@@ -39,6 +40,7 @@ const navigation: NavItem[] = [
   { name: "Requests", href: "/requests", icon: ClipboardList, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Task Board", href: "/tasks", icon: ListTodo, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Payroll", href: "/payroll", icon: Wallet, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
+  { name: "Work log", href: "/work-log", icon: CalendarClock, allowedFor: ["executive", "branchLead"] },
   { name: "Documents", href: "/documents", icon: FileText, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Announcements", href: "/announcements", icon: Megaphone, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["executive"] },
