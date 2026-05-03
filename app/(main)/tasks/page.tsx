@@ -156,18 +156,33 @@ export default async function TasksPage() {
   const userSubBranch = profile.department ?? null;
 
   const tasks = allTasks.filter((t) => {
+    // Admins see everything
     if (isAdmin) return true;
-
-    if (t.is_admin && !isBranchLead && !isSubBranchLead) return false;
 
     const taskBranch = rel(t.branch);
     const taskSubBranch = rel(t.sub_branch);
 
+    // Branch leads: see all tasks in their branch (any sub_branch), including restricted ones
     if (isBranchLead) {
       if (!taskBranch) return true;
       return taskBranch.name === userBranch;
     }
 
+    // Sub-branch leads: see restricted (is_admin) tasks too; scoped by branch then sub_branch.
+    // A task with no sub_branch is visible to ALL sub-branch leads in the matching branch,
+    // including when the task is marked is_admin (restricted).
+    if (isSubBranchLead) {
+      if (!taskBranch) return true;
+      if (taskBranch.name !== userBranch) return false;
+      if (!taskSubBranch) return true;
+      return taskSubBranch.name === userSubBranch;
+    }
+
+    // Regular staff: cannot see restricted tasks
+    if (t.is_admin) return false;
+
+    // Regular staff: scoped by branch then sub_branch
+    // null sub_branch → visible to ALL staff in the branch (all sub_branches)
     if (!taskBranch) return true;
     if (taskBranch.name !== userBranch) return false;
     if (!taskSubBranch) return true;
