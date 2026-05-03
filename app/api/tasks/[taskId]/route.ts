@@ -99,6 +99,10 @@ export async function PATCH(request: NextRequest, context: { params: { taskId: s
   const due_date = dueDateRaw.length > 0 ? dueDateRaw : null;
   const assignedHours = parseAssignedHours(form.get("assignedHours"));
 
+  const priorityRaw = String(form.get("priority") ?? "").trim();
+  const priority =
+    priorityRaw === "medium" || priorityRaw === "high" ? priorityRaw : priorityRaw === "low" ? "low" : undefined;
+
   const removeAttachment = String(form.get("removeAttachment") ?? "") === "1";
   const file = form.get("attachment");
 
@@ -113,6 +117,9 @@ export async function PATCH(request: NextRequest, context: { params: { taskId: s
   };
   if (assignedHours !== undefined) {
     updates.assigned_hours = assignedHours;
+  }
+  if (priority !== undefined) {
+    updates.priority = priority;
   }
 
   const previousPath = (taskRow.attachment_path as string | null) ?? null;

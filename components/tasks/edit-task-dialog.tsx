@@ -21,6 +21,7 @@ type EditTaskDialogProps = {
     due_date: string | null;
     assigned_hours: number;
     attachment_path: string | null;
+    priority: "low" | "medium" | "high";
   };
 };
 
@@ -149,6 +150,22 @@ export function EditTaskDialog({ task }: EditTaskDialogProps) {
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
                 />
               </div>
+            </div>
+
+            <div>
+              <label htmlFor="et-priority" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
+                Priority
+              </label>
+              <select
+                id="et-priority"
+                name="priority"
+                defaultValue={task.priority}
+                className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
             </div>
 
             <div>

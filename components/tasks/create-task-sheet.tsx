@@ -210,6 +210,22 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
               <p className="mt-1 text-xs text-[#001A3D]/45">Max 15 MB.</p>
             </div>
 
+            <div>
+              <label htmlFor="ct-priority" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
+                Priority
+              </label>
+              <select
+                id="ct-priority"
+                name="priority"
+                defaultValue="low"
+                className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
             <div className="flex items-center gap-3 rounded-xl bg-[#f8f9fa] px-4 py-3">
               <button
                 type="button"
@@ -229,10 +245,10 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck className="h-4 w-4 text-[#001A3D]/60" />
-                  <span className="text-sm font-medium text-[#001A3D]">Admin / Branch Lead only</span>
+                  <span className="text-sm font-medium text-[#001A3D]">Admin / Branch Lead / Sub-branch Lead only</span>
                 </div>
                 <p className="mt-0.5 text-xs text-[#001A3D]/50">
-                  Only admins and branch leads will see this task
+                  Only admins, branch leads, and sub-branch leads will see this task
                 </p>
               </div>
             </div>

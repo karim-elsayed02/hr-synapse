@@ -67,7 +67,13 @@ export async function POST(request: NextRequest) {
   let due_date: string | null
   let assigned_hours: number
   let is_admin: boolean
+  let priority: "low" | "medium" | "high"
   let attachmentFile: File | null = null
+
+  function parsePriority(value: unknown): "low" | "medium" | "high" {
+    if (value === "medium" || value === "high") return value
+    return "low"
+  }
 
   if (contentType.includes("multipart/form-data")) {
     const form = await request.formData()
@@ -82,6 +88,7 @@ export async function POST(request: NextRequest) {
     due_date = due.length > 0 ? due : null
     assigned_hours = parseAssignedHours(form.get("assignedHours"))
     is_admin = String(form.get("is_admin") ?? "") === "true"
+    priority = parsePriority(String(form.get("priority") ?? ""))
     const f = form.get("attachment")
     if (f instanceof File && f.size > 0) {
       attachmentFile = f
@@ -111,8 +118,8 @@ export async function POST(request: NextRequest) {
       typeof dueRaw === "string" && dueRaw.trim() ? dueRaw.trim() : null
 
     assigned_hours = parseAssignedHours(body.assignedHours ?? body.assigned_hours)
-
     is_admin = body.is_admin === true
+    priority = parsePriority(body.priority)
   }
 
   if (!title) {
@@ -143,6 +150,7 @@ export async function POST(request: NextRequest) {
       assigned_hours,
       due_date,
       is_admin,
+      priority,
       status: "open",
       created_by: user.id,
     })

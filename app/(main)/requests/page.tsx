@@ -166,7 +166,7 @@ export default function RequestsPage() {
                   : "text-[#001A3D]/50 hover:text-[#001A3D]/70"
               }`}
             >
-              My requests ({myRequests.length})
+              My requests
             </button>
             <button
               type="button"
@@ -177,7 +177,7 @@ export default function RequestsPage() {
                   : "text-[#001A3D]/50 hover:text-[#001A3D]/70"
               }`}
             >
-              For my approval ({requestsForMe.length})
+              For my approval
             </button>
           </div>
 

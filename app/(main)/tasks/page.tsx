@@ -19,6 +19,8 @@ import { attachmentFileLabel } from "@/lib/task-attachments";
 import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
 import { CalendarDays, SlidersHorizontal, ShieldCheck } from "lucide-react";
 
+type TaskPriority = "low" | "medium" | "high";
+
 type TaskRow = {
   id: string;
   title: string;
@@ -32,6 +34,7 @@ type TaskRow = {
   sub_branch_id: string | null;
   attachment_path: string | null;
   is_admin: boolean;
+  priority: TaskPriority;
   branch: { id: string; name: string } | { id: string; name: string }[] | null;
   sub_branch: { id: string; name: string } | { id: string; name: string }[] | null;
   claimed_by_profile:
@@ -39,6 +42,14 @@ type TaskRow = {
     | { id: string; full_name: string | null }[]
     | null;
 };
+
+const PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
+
+function sortByPriority(tasks: TaskRow[]): TaskRow[] {
+  return [...tasks].sort(
+    (a, b) => PRIORITY_ORDER[a.priority ?? "low"] - PRIORITY_ORDER[b.priority ?? "low"]
+  );
+}
 
 type BranchRow = { id: string; name: string };
 
@@ -108,7 +119,7 @@ export default async function TasksPage() {
         .from("tasks")
         .select(`
           id, title, description, assigned_hours, status, due_date,
-          created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin,
+          created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin, priority,
           branch:branches(id, name),
           sub_branch:sub_branches(id, name),
           claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
@@ -137,6 +148,7 @@ export default async function TasksPage() {
 
   const isAdmin = profile.role === "admin";
   const isBranchLead = profile.role === "branch_lead";
+  const isSubBranchLead = profile.role === "sub_branch_lead";
   const canCreate = isAdmin || isBranchLead;
   const canDeleteTask = isAdmin || isBranchLead;
 
@@ -146,7 +158,7 @@ export default async function TasksPage() {
   const tasks = allTasks.filter((t) => {
     if (isAdmin) return true;
 
-    if (t.is_admin && !isBranchLead) return false;
+    if (t.is_admin && !isBranchLead && !isSubBranchLead) return false;
 
     const taskBranch = rel(t.branch);
     const taskSubBranch = rel(t.sub_branch);
@@ -171,10 +183,10 @@ export default async function TasksPage() {
     staffForAssign = (staffRows ?? []) as { id: string; full_name: string | null }[];
   }
 
-  const openTasks = tasks.filter((t) => t.status === "open");
-  const progressTasks = tasks.filter((t) => t.status === "claimed" || t.status === "in_progress");
+  const openTasks = sortByPriority(tasks.filter((t) => t.status === "open"));
+  const progressTasks = sortByPriority(tasks.filter((t) => t.status === "claimed" || t.status === "in_progress"));
   /** Completed column: awaiting approval only — approved tasks appear in Recent Task Logs only. */
-  const doneTasks = tasks.filter((t) => t.status === "completed");
+  const doneTasks = sortByPriority(tasks.filter((t) => t.status === "completed"));
 
   return (
     <div className="space-y-8">
@@ -266,6 +278,19 @@ export default async function TasksPage() {
 /* ═══════════════════════════════════════════════
    Sub-components (server, co-located)
    ═══════════════════════════════════════════════ */
+
+function PriorityBadge({ priority }: { priority: TaskPriority }) {
+  const styles: Record<TaskPriority, string> = {
+    high: "bg-red-50 text-red-700 ring-1 ring-red-200",
+    medium: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+    low: "bg-[#001A3D]/5 text-[#001A3D]/50",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${styles[priority]}`}>
+      {priority}
+    </span>
+  );
+}
 
 function KanbanColumn({
   title,
@@ -359,7 +384,7 @@ function TaskCard({
           <DeleteTaskButton taskId={task.id} />
         </div>
       )}
-      {/* Category tag + admin badge */}
+      {/* Category tag + priority + admin badge */}
       <div className="flex flex-wrap items-center gap-2 pr-10">
         {branch && (
           <span
@@ -368,6 +393,7 @@ function TaskCard({
             {branch.name}
           </span>
         )}
+        <PriorityBadge priority={task.priority ?? "low"} />
         {task.is_admin && (
           <span className="inline-flex items-center gap-1 rounded-md bg-[#001A3D]/10 px-2 py-1 text-[10px] font-semibold text-[#001A3D]">
             <ShieldCheck className="h-3 w-3" />
@@ -402,6 +428,7 @@ function TaskCard({
               due_date: task.due_date,
               assigned_hours: task.assigned_hours,
               attachment_path: task.attachment_path,
+              priority: task.priority ?? "low",
             }}
           />
         </div>
