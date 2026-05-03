@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { isAllowedBranchName, isAllowedSubBranchName } from "@/lib/utils/org-structure";
+import {
+  isAllowedBranchName,
+  isAllowedSubBranchName,
+  normalizeBranchSlug,
+  normalizeSubBranchSlug,
+} from "@/lib/utils/org-structure";
 import {
   approveTask,
   assignTaskToUser,
@@ -152,8 +157,10 @@ export default async function TasksPage() {
   const canCreate = isAdmin || isBranchLead;
   const canDeleteTask = isAdmin || isBranchLead;
 
-  const userBranch = profile.branch ?? null;
-  const userSubBranch = profile.department ?? null;
+  // Slugify once so every comparison is normalised (profile stores slugs like
+  // "work_experience" while branches.name is the display form "Work Experience")
+  const userBranchSlug = normalizeBranchSlug(profile.branch);
+  const userSubBranchSlug = normalizeSubBranchSlug(profile.department);
 
   const tasks = allTasks.filter((t) => {
     // Admins see everything
@@ -162,31 +169,35 @@ export default async function TasksPage() {
     const taskBranch = rel(t.branch);
     const taskSubBranch = rel(t.sub_branch);
 
+    // Normalise task-side names for comparison
+    const taskBranchSlug = normalizeBranchSlug(taskBranch?.name);
+    const taskSubBranchSlug = normalizeSubBranchSlug(taskSubBranch?.name);
+
     // Branch leads: see all tasks in their branch (any sub_branch), including restricted ones
     if (isBranchLead) {
-      if (!taskBranch) return true;
-      return taskBranch.name === userBranch;
+      if (!taskBranchSlug) return true;
+      return taskBranchSlug === userBranchSlug;
     }
 
     // Sub-branch leads: see restricted (is_admin) tasks too; scoped by branch then sub_branch.
     // A task with no sub_branch is visible to ALL sub-branch leads in the matching branch,
     // including when the task is marked is_admin (restricted).
     if (isSubBranchLead) {
-      if (!taskBranch) return true;
-      if (taskBranch.name !== userBranch) return false;
-      if (!taskSubBranch) return true;
-      return taskSubBranch.name === userSubBranch;
+      if (!taskBranchSlug) return true;
+      if (taskBranchSlug !== userBranchSlug) return false;
+      if (!taskSubBranchSlug) return true;
+      return taskSubBranchSlug === userSubBranchSlug;
     }
 
     // Regular staff: cannot see restricted tasks
     if (t.is_admin) return false;
 
-    // Regular staff: scoped by branch then sub_branch
+    // Regular staff: scoped by branch then sub_branch.
     // null sub_branch → visible to ALL staff in the branch (all sub_branches)
-    if (!taskBranch) return true;
-    if (taskBranch.name !== userBranch) return false;
-    if (!taskSubBranch) return true;
-    return taskSubBranch.name === userSubBranch;
+    if (!taskBranchSlug) return true;
+    if (taskBranchSlug !== userBranchSlug) return false;
+    if (!taskSubBranchSlug) return true;
+    return taskSubBranchSlug === userSubBranchSlug;
   });
 
   let staffForAssign: { id: string; full_name: string | null }[] = [];
