@@ -53,8 +53,8 @@ export async function GET(request: NextRequest) {
   const targetUserId = url.searchParams.get("user_id");
 
   if (targetUserId && targetUserId !== user.id) {
-    if (profile.role !== "admin") {
-      return NextResponse.json({ error: "Only admins can view other users' documents" }, { status: 403 });
+    if (profile.role !== "admin" && profile.role !== "executive") {
+      return NextResponse.json({ error: "Only admins and executives can view other users' documents" }, { status: 403 });
     }
     const { data, error } = await supabase
       .from("documents")
@@ -110,8 +110,8 @@ export async function POST(request: NextRequest) {
     return postBranchDocument(formData, user.id, profile, supabase);
   }
 
-  if (profile.role !== "admin") {
-    return NextResponse.json({ error: "Only admins can upload employee documents" }, { status: 403 });
+  if (profile.role !== "admin" && profile.role !== "executive") {
+    return NextResponse.json({ error: "Only admins and executives can upload employee documents" }, { status: 403 });
   }
 
   const file = formData.get("file") as File | null;
@@ -327,8 +327,8 @@ export async function DELETE(request: NextRequest) {
   const scope = (doc as { scope?: string }).scope ?? "employee";
 
   if (scope === "employee") {
-    if (profile.role !== "admin") {
-      return NextResponse.json({ error: "Only admins can delete employee documents" }, { status: 403 });
+    if (profile.role !== "admin" && profile.role !== "executive") {
+      return NextResponse.json({ error: "Only admins and executives can delete employee documents" }, { status: 403 });
     }
   } else {
     if (!canDeleteBranchDocument(profile, doc as never, user.id)) {

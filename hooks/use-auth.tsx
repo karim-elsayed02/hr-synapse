@@ -53,6 +53,7 @@ type AuthContextValue = {
   loading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isExecutive: boolean;
   isManager: boolean;
   login: (input: LoginInput) => Promise<LoginResult>;
   logout: () => void;
@@ -500,6 +501,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       isAuthenticated: !!user,
       isAdmin: profile?.role === "admin",
+      isExecutive: profile?.role === "executive",
       isManager: isManagerLikeRole(profile?.role),
       login,
       logout,

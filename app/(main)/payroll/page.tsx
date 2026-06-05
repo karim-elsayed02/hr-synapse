@@ -17,13 +17,9 @@ export default async function PayrollPage() {
     .eq("id", user.id)
     .single();
 
-  if (
-    !currentProfile ||
-    (currentProfile.role !== "admin" &&
-      currentProfile.role !== "branch_lead" &&
-      currentProfile.role !== "sub_branch_lead" &&
-      currentProfile.role !== "staff")
-  ) {
+  const PAYROLL_ALLOWED_ROLES = ["admin", "executive", "branch_lead", "sub_branch_lead", "staff"];
+
+  if (!currentProfile || !PAYROLL_ALLOWED_ROLES.includes(currentProfile.role ?? "")) {
     return (
       <div className="flex items-center justify-center p-16 text-[#001A3D]/50">
         You don&apos;t have permission to view payroll.
@@ -31,9 +27,12 @@ export default async function PayrollPage() {
     );
   }
 
+  const isAdminOrExecutive =
+    currentProfile.role === "admin" || currentProfile.role === "executive";
+
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
-      <PayrollClient isAdmin={currentProfile.role === "admin"} />
+      <PayrollClient isAdmin={isAdminOrExecutive} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 export type UserRole =
   | "admin"
+  | "executive"
   | "branch_lead"
   | "sub_branch_lead"
   | "staff"
@@ -16,6 +17,7 @@ export interface User {
 /** Every role value allowed by the profiles table. */
 export const STAFF_PROFILE_ROLES = [
   "admin",
+  "executive",
   "branch_lead",
   "sub_branch_lead",
   "staff",
@@ -35,7 +37,13 @@ export function isManagerLikeRole(role: string | null | undefined): boolean {
   return role === "branch_lead" || role === "sub_branch_lead"
 }
 
+/** True for admin AND executive — both have full visibility over data/tasks/users. */
 export function isExecutiveTeam(user: User): boolean {
+  return user.role === "admin" || user.role === "executive"
+}
+
+/** True only for admin — required for settings and admin-only system pages. */
+export function isAdmin(user: User): boolean {
   return user.role === "admin"
 }
 
@@ -47,13 +55,14 @@ export function isMentor(user: User): boolean {
   return user.role === "sub_branch_lead"
 }
 
-// Full access permissions (Executive Team)
+// Full access permissions (Executive Team = admin + executive)
 export function canAccessUserManagement(user: User): boolean {
   return isExecutiveTeam(user)
 }
 
+/** Settings page is admin-only; executive team does not have access. */
 export function canAccessSettings(user: User): boolean {
-  return isExecutiveTeam(user)
+  return isAdmin(user)
 }
 
 export function canViewAllStaff(user: User): boolean {
@@ -87,9 +96,9 @@ export function canMakeAnnouncements(user: User): boolean {
   return isExecutiveTeam(user) || isBranchLead(user)
 }
 
-/** Staff work log (timesheet diary) — admins and branch leads only. */
+/** Staff work log (timesheet diary) — admin, executive, and branch leads only. */
 export function canAccessStaffWorkLog(role: string | null | undefined): boolean {
-  return role === "admin" || role === "branch_lead"
+  return role === "admin" || role === "executive" || role === "branch_lead"
 }
 
 export function canViewBranchStaff(user: User, targetBranch?: string): boolean {
@@ -100,11 +109,11 @@ export function canViewBranchStaff(user: User, targetBranch?: string): boolean {
 
 // Basic permissions (Mentors and all users)
 export function canViewDirectory(user: User): boolean {
-  return true // All users can view directory
+  return true
 }
 
 export function canMakeRequests(user: User): boolean {
-  return true // All users can make requests
+  return true
 }
 
 export function canAddTasksToBranch(user: User, targetBranch?: string): boolean {
@@ -115,11 +124,11 @@ export function canAddTasksToBranch(user: User, targetBranch?: string): boolean 
 }
 
 export function canViewOwnDocuments(user: User): boolean {
-  return true // All users can view their own documents
+  return true
 }
 
 export function canUploadDocuments(user: User): boolean {
-  return true // All users can upload documents
+  return true
 }
 
 export function canEditUser(currentUser: User, targetUser: User): boolean {
@@ -135,9 +144,8 @@ export function canEditUser(currentUser: User, targetUser: User): boolean {
 }
 
 export function getAccessibleBranches(user: User): string[] {
-  if (user.role === "admin") {
-    // Admins can see all branches - this would typically come from a database query
-    return ["London", "Manchester", "Birmingham", "Leeds", "Glasgow"]
+  if (isExecutiveTeam(user)) {
+    return ["medical", "dental", "tutoring"]
   }
 
   if (isManagerLikeRole(user.role) && user.branch) {

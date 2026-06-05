@@ -3,60 +3,66 @@
  * and task branch / sub-branch allowlists (matched against `branches.name` / `sub_branches.name`).
  * Stored profile values are lowercase slugs; use formatters for display.
  *
- * Branches: Executives, Admissions, Work Experience, Tutoring, Education, Social Media.
- * Sub-branches: Medical, Dental only.
+ * Branches (top-level): Medical, Dental, Tutoring.
+ * Sub-branches (under Medical and Dental only): Work Experience, Admissions, Education, Events.
+ * Tutoring has no sub-branches.
  *
  * Keep rows in Supabase `branches` / `sub_branches` aligned with these names so slugify(name)
  * matches (e.g. "Work Experience" → work_experience).
  */
 
 export const BRANCH_SLUGS = [
-  "executives",
-  "admissions",
-  "work_experience",
+  "medical",
+  "dental",
   "tutoring",
-  "education",
-  "social_media",
 ] as const;
 export type BranchSlug = (typeof BRANCH_SLUGS)[number];
 
-export const SUB_BRANCH_SLUGS = ["medical", "dental"] as const;
+export const SUB_BRANCH_SLUGS = [
+  "work_experience",
+  "admissions",
+  "education",
+  "events",
+] as const;
 export type SubBranchSlug = (typeof SUB_BRANCH_SLUGS)[number];
+
+/** Branches that support sub-branches. Tutoring is excluded. */
+export const BRANCHES_WITH_SUB_BRANCHES: ReadonlySet<BranchSlug> = new Set([
+  "medical",
+  "dental",
+] as const);
 
 const BRANCH_SET = new Set<string>(BRANCH_SLUGS);
 const SUB_BRANCH_SET = new Set<string>(SUB_BRANCH_SLUGS);
 
 export const BRANCH_LABELS: Record<BranchSlug, string> = {
-  executives: "Executives",
-  admissions: "Admissions",
-  work_experience: "Work Experience",
+  medical: "Medical",
+  dental: "Dental",
   tutoring: "Tutoring",
-  education: "Education",
-  social_media: "Social Media",
 };
 
 export const SUB_BRANCH_LABELS: Record<SubBranchSlug, string> = {
-  medical: "Medical",
-  dental: "Dental",
+  work_experience: "Work Experience",
+  admissions: "Admissions",
+  education: "Education",
+  events: "Events",
 };
 
 /** Map common legacy / human text to branch slug */
 const BRANCH_ALIASES: Record<string, BranchSlug> = {
-  executives: "executives",
-  executive: "executives",
-  admissions: "admissions",
-  admission: "admissions",
-  work_experience: "work_experience",
-  workexperience: "work_experience",
+  medical: "medical",
+  dental: "dental",
   tutoring: "tutoring",
-  education: "education",
-  social_media: "social_media",
-  socialmedia: "social_media",
 };
 
 const SUB_BRANCH_ALIASES: Record<string, SubBranchSlug> = {
-  medical: "medical",
-  dental: "dental",
+  work_experience: "work_experience",
+  workexperience: "work_experience",
+  admissions: "admissions",
+  admission: "admissions",
+  education: "education",
+  events: "events",
+  event: "events",
 };
 
 function slugify(s: string): string {
@@ -113,6 +119,7 @@ export type BranchDeptValidation =
 
 /**
  * Validate API payloads: empty → null; otherwise must be known slugs.
+ * Tutoring branch does not accept sub-branches.
  */
 export function validateProfileBranchDept(
   branchRaw: unknown,
@@ -134,6 +141,20 @@ export function validateProfileBranchDept(
     return {
       ok: false,
       error: `Invalid sub-branch. Choose one of: ${SUB_BRANCH_SLUGS.join(", ")}`,
+    };
+  }
+
+  if (branch === "tutoring" && department !== null) {
+    return {
+      ok: false,
+      error: "Tutoring branch does not have sub-branches.",
+    };
+  }
+
+  if (department !== null && branch !== null && !BRANCHES_WITH_SUB_BRANCHES.has(branch)) {
+    return {
+      ok: false,
+      error: `Branch '${branch}' does not support sub-branches.`,
     };
   }
 

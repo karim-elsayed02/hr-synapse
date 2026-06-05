@@ -152,10 +152,12 @@ export default async function TasksPage() {
   );
 
   const isAdmin = profile.role === "admin";
+  const isExecutive = profile.role === "executive";
+  const isAdminOrExecutive = isAdmin || isExecutive;
   const isBranchLead = profile.role === "branch_lead";
   const isSubBranchLead = profile.role === "sub_branch_lead";
-  const canCreate = isAdmin || isBranchLead;
-  const canDeleteTask = isAdmin || isBranchLead;
+  const canCreate = isAdminOrExecutive || isBranchLead;
+  const canDeleteTask = isAdminOrExecutive || isBranchLead;
 
   // Slugify once so every comparison is normalised (profile stores slugs like
   // "work_experience" while branches.name is the display form "Work Experience")
@@ -163,8 +165,8 @@ export default async function TasksPage() {
   const userSubBranchSlug = normalizeSubBranchSlug(profile.department);
 
   const tasks = allTasks.filter((t) => {
-    // Admins see everything
-    if (isAdmin) return true;
+    // Admins and executives see everything
+    if (isAdminOrExecutive) return true;
 
     const taskBranch = rel(t.branch);
     const taskSubBranch = rel(t.sub_branch);
@@ -248,7 +250,7 @@ export default async function TasksPage() {
               key={task.id}
               task={task}
               userId={user.id}
-              isAdmin={isAdmin}
+              isAdmin={isAdminOrExecutive}
               isManager={canCreate}
               canDelete={canDeleteTask}
               staff={staffForAssign}
@@ -267,7 +269,7 @@ export default async function TasksPage() {
               key={task.id}
               task={task}
               userId={user.id}
-              isAdmin={isAdmin}
+              isAdmin={isAdminOrExecutive}
               isManager={canCreate}
               canDelete={canDeleteTask}
               staff={staffForAssign}
@@ -286,7 +288,7 @@ export default async function TasksPage() {
               key={task.id}
               task={task}
               userId={user.id}
-              isAdmin={isAdmin}
+              isAdmin={isAdminOrExecutive}
               isManager={canCreate}
               canDelete={canDeleteTask}
               staff={staffForAssign}
@@ -296,7 +298,7 @@ export default async function TasksPage() {
       </div>
 
       {/* Full history including approved — search filters by title, ID, or assignee */}
-      <RecentTaskLogs tasks={tasks} canDelete={isAdmin} />
+      <RecentTaskLogs tasks={tasks} canDelete={isAdminOrExecutive} />
     </div>
   );
 }

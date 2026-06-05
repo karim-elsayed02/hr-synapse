@@ -107,7 +107,8 @@ function folderSortKey(doc: DocumentRow): string {
 }
 
 export default function DocumentsPage() {
-  const { user, profile, isAdmin, loading: authLoading } = useAuth();
+  const { user, profile, isAdmin, isExecutive, loading: authLoading } = useAuth();
+  const isAdminOrExecutive = isAdmin || isExecutive;
   const router = useRouter();
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,9 +124,9 @@ export default function DocumentsPage() {
   const [subBranches, setSubBranches] = useState<{ id: string; name: string }[]>([]);
 
   const role = profile?.role ?? null;
-  const canUploadEmployee = isAdmin;
+  const canUploadEmployee = isAdminOrExecutive;
   const canUploadBranch =
-    role === "admin" || role === "branch_lead" || role === "sub_branch_lead";
+    role === "admin" || role === "executive" || role === "branch_lead" || role === "sub_branch_lead";
   const showUpload = canUploadEmployee || canUploadBranch;
 
   const fetchDocuments = useCallback(async () => {
@@ -151,14 +152,14 @@ export default function DocumentsPage() {
   }, [authLoading, user, router, fetchDocuments]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdminOrExecutive) return;
     fetch("/api/staff")
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data)) setStaffList(data);
       })
       .catch(() => {});
-  }, [isAdmin]);
+  }, [isAdminOrExecutive]);
 
   useEffect(() => {
     if (!user) return;
@@ -270,7 +271,7 @@ export default function DocumentsPage() {
   }, [filtered]);
 
   function showDeleteButton(doc: DocumentRow): boolean {
-    if (isAdmin) return true;
+    if (isAdminOrExecutive) return true;
     const p: ProfileSlice = {
       role: profile?.role ?? null,
       branch: profile?.branch ?? null,
@@ -291,7 +292,7 @@ export default function DocumentsPage() {
             Documents
           </h1>
           <p className="mt-1 text-sm text-[#001A3D]/55">
-            {isAdmin
+            {isAdminOrExecutive
               ? "Employee HR files and branch shared libraries"
               : "Documents for you and your branch / sub-branch"}
           </p>

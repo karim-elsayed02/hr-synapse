@@ -55,7 +55,7 @@ function asNumber(value: FormDataEntryValue | null, fallback = 0) {
 }
 
 function isAdminOrManager(role: string) {
-  return role === "admin" || isManagerLikeRole(role);
+  return role === "admin" || role === "executive" || isManagerLikeRole(role);
 }
 
 function buildTaskIdFormData(taskId: string) {
@@ -102,8 +102,8 @@ export async function getTasksAction() {
 export async function createTaskAction(input: FormData | Record<string, unknown>) {
   const { supabase, user, profile } = await requireUser();
 
-  if (profile.role !== "admin" && profile.role !== "branch_lead") {
-    throw new Error("Only admins and branch leads can create tasks");
+  if (profile.role !== "admin" && profile.role !== "executive" && profile.role !== "branch_lead") {
+    throw new Error("Only admins, executives, and branch leads can create tasks");
   }
 
   const isFormData = input instanceof FormData;
@@ -475,8 +475,8 @@ export async function approveTask(formData: FormData) {
 
   if (!taskId) throw new Error("Missing taskId");
 
-  if (profile.role !== "admin") {
-    throw new Error("Only admins can approve tasks");
+  if (profile.role !== "admin" && profile.role !== "executive") {
+    throw new Error("Only admins and executives can approve tasks");
   }
 
   const { data: taskRow } = await supabase
@@ -520,8 +520,8 @@ export async function deleteTask(formData: FormData): Promise<DeleteTaskResult> 
     const taskId = String(formData.get("taskId") ?? "").trim();
     if (!taskId) return { error: "Missing task id" };
 
-    if (profile.role !== "admin" && profile.role !== "branch_lead") {
-      return { error: "Only admins and branch leads can delete tasks" };
+    if (profile.role !== "admin" && profile.role !== "executive" && profile.role !== "branch_lead") {
+      return { error: "Only admins, executives, and branch leads can delete tasks" };
     }
 
     const { data: row, error: fetchErr } = await supabase

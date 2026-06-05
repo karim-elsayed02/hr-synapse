@@ -60,7 +60,7 @@ export async function GET() {
       .order("month", { ascending: false })
       .order("created_at", { ascending: false });
 
-    if (role !== "admin") {
+    if (role !== "admin" && role !== "executive") {
       query = query.eq("total_payment_user_id", user.id);
     }
 
@@ -111,8 +111,8 @@ export async function PATCH(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -189,8 +189,8 @@ export async function DELETE(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();

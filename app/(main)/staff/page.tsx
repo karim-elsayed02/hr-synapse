@@ -49,19 +49,19 @@ export default async function StaffPage({ searchParams }: StaffPageProps) {
     console.error("Failed to load staff directory:", error);
   }
 
-  const isAdmin = currentProfile?.role === "admin";
+  const canManage = currentProfile?.role === "admin" || currentProfile?.role === "executive";
 
   const addStaffRaw = searchParams.addStaff;
   const addStaffParam = Array.isArray(addStaffRaw) ? addStaffRaw[0] : addStaffRaw;
   const openAddStaffModal =
-    isAdmin && (addStaffParam === "1" || addStaffParam === "true");
+    canManage && (addStaffParam === "1" || addStaffParam === "true");
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
       <StaffDirectoryClient
         initialStaff={(staff ?? []) as StaffRow[]}
         currentUserRole={currentProfile?.role ?? "staff"}
-        canManageStaff={isAdmin}
+        canManageStaff={canManage}
         initialOpenAddStaff={openAddStaffModal}
       />
     </div>

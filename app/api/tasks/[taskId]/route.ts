@@ -61,8 +61,8 @@ export async function PATCH(request: NextRequest, context: { params: { taskId: s
     return NextResponse.json({ error: "Profile not found" }, { status: 403 });
   }
 
-  if (profile.role !== "admin" && profile.role !== "branch_lead") {
-    return NextResponse.json({ error: "Only admins and branch leads can edit tasks" }, { status: 403 });
+  if (profile.role !== "admin" && profile.role !== "executive" && profile.role !== "branch_lead") {
+    return NextResponse.json({ error: "Only admins, executives, and branch leads can edit tasks" }, { status: 403 });
   }
 
   const { data: taskRow, error: taskErr } = await supabase

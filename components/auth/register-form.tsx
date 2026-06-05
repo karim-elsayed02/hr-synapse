@@ -11,12 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
-import { STAFF_PROFILE_ROLES } from "@/lib/utils/permissions"
+import { STAFF_PROFILE_ROLES, type StaffProfileRole } from "@/lib/utils/permissions"
 import {
   BRANCH_SLUGS,
   SUB_BRANCH_SLUGS,
   BRANCH_LABELS,
   SUB_BRANCH_LABELS,
+  BRANCHES_WITH_SUB_BRANCHES,
 } from "@/lib/utils/org-structure"
 
 interface RegisterFormProps {
@@ -24,6 +25,14 @@ interface RegisterFormProps {
 }
 
 const SYNAPSEUK_ROLES = STAFF_PROFILE_ROLES
+
+const ROLE_LABELS: Record<StaffProfileRole, string> = {
+  admin:           "Admin",
+  executive:       "Executive",
+  branch_lead:     "Branch Lead",
+  sub_branch_lead: "Sub-Branch Lead",
+  staff:           "Staff",
+}
 
 export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
   const [isLoading, setIsLoading] = useState(false)
@@ -33,11 +42,11 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
   const { user, profile } = useAuth()
   const { toast } = useToast()
 
-  if (isAdminCreating && (!user || !profile || profile.role !== "admin")) {
+  if (isAdminCreating && (!user || !profile || (profile.role !== "admin" && profile.role !== "executive"))) {
     return (
       <Card className="w-full max-w-md mx-auto">
         <CardContent className="pt-6">
-          <p className="text-center text-muted-foreground">Only administrators can create new staff accounts.</p>
+          <p className="text-center text-muted-foreground">Only admins and executives can create new staff accounts.</p>
         </CardContent>
       </Card>
     )
@@ -160,7 +169,7 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                   <SelectContent className="max-h-60 overflow-y-auto">
                     {SYNAPSEUK_ROLES.map((role) => (
                       <SelectItem key={role} value={role}>
-                        {role}
+                        {ROLE_LABELS[role]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -173,7 +182,10 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                   value={selectedBranch}
                   onValueChange={(value) => {
                     setSelectedBranch(value)
-                    setSelectedDepartment("")
+                    // clear sub-branch if switching to a branch with no sub-branches
+                    if (!BRANCHES_WITH_SUB_BRANCHES.has(value as never)) {
+                      setSelectedDepartment("")
+                    }
                   }}
                   required
                 >
@@ -190,6 +202,7 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                 </Select>
               </div>
 
+              {BRANCHES_WITH_SUB_BRANCHES.has(selectedBranch as never) && (
               <div className="space-y-2">
                 <Label htmlFor="department">
                   Sub-branch <span className="font-normal text-muted-foreground">(optional)</span>
@@ -213,6 +226,7 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                   </SelectContent>
                 </Select>
               </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>

@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
-import { isExecutiveTeam, isBranchLead, isMentor } from "@/lib/utils/permissions"
+import { isExecutiveTeam, isAdmin, isBranchLead, isMentor } from "@/lib/utils/permissions"
 import { getAvatarUrl } from "@/lib/utils/avatar"
 import {
   LayoutDashboard,
@@ -30,7 +30,8 @@ type NavItem = {
   name: string
   href: string
   icon: LucideIcon
-  allowedFor: ("executive" | "branchLead" | "mentor" | "staff")[]
+  /** "admin" = admin role only; "executive" = admin + executive; "branchLead"/"mentor"/"staff" = those roles */
+  allowedFor: ("admin" | "executive" | "branchLead" | "mentor" | "staff")[]
 }
 
 const navigation: NavItem[] = [
@@ -43,7 +44,7 @@ const navigation: NavItem[] = [
   { name: "Work log", href: "/work-log", icon: CalendarClock, allowedFor: ["executive", "branchLead"] },
   { name: "Documents", href: "/documents", icon: FileText, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Announcements", href: "/announcements", icon: Megaphone, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
-  { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["executive"] },
+  { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["admin"] },
 ]
 
 export function Sidebar() {
@@ -53,11 +54,12 @@ export function Sidebar() {
 
   const filteredNavigation = navigation.filter((item) => {
     if (!profile) return false
+    const hasAdminAccess = item.allowedFor.includes("admin") && isAdmin(profile)
     const hasExecutiveAccess = item.allowedFor.includes("executive") && isExecutiveTeam(profile)
     const hasBranchLeadAccess = item.allowedFor.includes("branchLead") && isBranchLead(profile)
     const hasMentorAccess = item.allowedFor.includes("mentor") && isMentor(profile)
     const hasStaffAccess = item.allowedFor.includes("staff")
-    return hasExecutiveAccess || hasBranchLeadAccess || hasMentorAccess || hasStaffAccess
+    return hasAdminAccess || hasExecutiveAccess || hasBranchLeadAccess || hasMentorAccess || hasStaffAccess
   })
 
   const shellClass =

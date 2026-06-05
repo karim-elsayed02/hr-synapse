@@ -57,7 +57,7 @@ export function canViewBranchSharedDocument(
 }
 
 export function canUploadBranchDocumentRole(role: string | null): boolean {
-  return role === "admin" || role === "branch_lead" || role === "sub_branch_lead";
+  return role === "admin" || role === "executive" || role === "branch_lead" || role === "sub_branch_lead";
 }
 
 export function assertBranchUploadMatchesProfile(
@@ -67,7 +67,7 @@ export function assertBranchUploadMatchesProfile(
   branchRows: { id: string; name: string }[],
   subBranchRows: { id: string; name: string }[]
 ): string | null {
-  if (profile.role === "admin") return null;
+  if (profile.role === "admin" || profile.role === "executive") return null;
 
   const branch = branchRows.find((b) => b.id === selectedBranchId);
   if (!branch) return "Invalid branch";
@@ -104,7 +104,7 @@ export function documentVisibleToProfile(
   doc: DocumentRowSlice,
   userId: string
 ): boolean {
-  if (profile.role === "admin") return true;
+  if (profile.role === "admin" || profile.role === "executive") return true;
   const scope = doc.scope ?? "employee";
   if (scope === "employee") {
     return doc.user_id === userId;
@@ -117,7 +117,7 @@ export function canDeleteBranchDocument(
   doc: DocumentRowSlice,
   userId: string
 ): boolean {
-  if (profile.role === "admin") return true;
+  if (profile.role === "admin" || profile.role === "executive") return true;
   if ((doc.scope ?? "employee") !== "branch") return false;
   if (doc.user_id === userId) return true;
   if (profile.role === "branch_lead") {

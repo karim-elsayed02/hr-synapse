@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   }
 
   const url = new URL(request.url);
-  const wantAll = url.searchParams.get("all") === "true" && role === "admin";
+  const wantAll = url.searchParams.get("all") === "true" && (role === "admin" || role === "executive");
   const loginOnly = url.searchParams.get("show_on_login") === "true";
 
   let query = supabase
@@ -107,8 +107,8 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (role !== "admin") {
-    return NextResponse.json({ error: "Only admins can create announcements" }, { status: 403 });
+  if (role !== "admin" && role !== "executive" && role !== "branch_lead") {
+    return NextResponse.json({ error: "Only admins, executives, and branch leads can create announcements" }, { status: 403 });
   }
 
   const formData = await request.formData();
@@ -195,8 +195,8 @@ export async function DELETE(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (role !== "admin") {
-    return NextResponse.json({ error: "Only admins can delete announcements" }, { status: 403 });
+  if (role !== "admin" && role !== "executive") {
+    return NextResponse.json({ error: "Only admins and executives can delete announcements" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));
@@ -232,8 +232,8 @@ export async function PATCH(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (role !== "admin") {
-    return NextResponse.json({ error: "Only admins can update announcements" }, { status: 403 });
+  if (role !== "admin" && role !== "executive") {
+    return NextResponse.json({ error: "Only admins and executives can update announcements" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));

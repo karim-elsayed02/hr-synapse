@@ -60,7 +60,7 @@ export async function GET() {
       `)
       .order("created_at", { ascending: false });
 
-    if (role !== "admin") {
+    if (role !== "admin" && role !== "executive") {
       query = query.eq("profile_id", user.id);
     }
 
@@ -89,8 +89,8 @@ export async function PUT() {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const { data: allApproved, error: taskErr } = await supabase
@@ -139,8 +139,8 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Only admins can add payroll entries" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Only admins and executives can add payroll entries" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -274,8 +274,8 @@ export async function PATCH(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();

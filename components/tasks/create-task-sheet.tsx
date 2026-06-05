@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Loader2, ShieldCheck } from "lucide-react";
 import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
+import { normalizeBranchSlug, BRANCHES_WITH_SUB_BRANCHES } from "@/lib/utils/org-structure";
 
 interface Branch {
   id: string;
@@ -30,7 +31,14 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedBranch, setSelectedBranch] = useState("");
+  const [selectedSubBranch, setSelectedSubBranch] = useState("");
   const [isAdminOnly, setIsAdminOnly] = useState(false);
+
+  /** True when the selected branch supports sub-branches (Medical or Dental). */
+  const selectedBranchName = branches.find((b) => b.id === selectedBranch)?.name ?? "";
+  const branchSupportsSubBranches = BRANCHES_WITH_SUB_BRANCHES.has(
+    normalizeBranchSlug(selectedBranchName) as never
+  );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -55,6 +63,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
 
       setOpen(false);
       setSelectedBranch("");
+      setSelectedSubBranch("");
       setIsAdminOnly(false);
       router.refresh();
     } catch (err) {
@@ -83,7 +92,8 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
         {!canCreate ? (
           <div className="space-y-4 px-6 pb-6 pt-2">
             <p className="text-sm leading-relaxed text-[#001A3D]/70">
-              Only <span className="font-medium text-[#001A3D]">administrators</span> and{" "}
+              Only <span className="font-medium text-[#001A3D]">admins</span>,{" "}
+              <span className="font-medium text-[#001A3D]">executives</span>, and{" "}
               <span className="font-medium text-[#001A3D]">branch leads</span> can create tasks. Ask your
               branch lead if you need a new task added to the board.
             </p>
@@ -129,7 +139,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid gap-4 ${branchSupportsSubBranches ? "grid-cols-2" : "grid-cols-1"}`}>
               <div>
                 <label htmlFor="ct-branch" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
                   Branch
@@ -138,7 +148,10 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                   id="ct-branch"
                   name="branchId"
                   value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedBranch(e.target.value);
+                    setSelectedSubBranch("");
+                  }}
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
                 >
                   <option value="">None</option>
@@ -148,6 +161,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                 </select>
               </div>
 
+              {branchSupportsSubBranches && (
               <div>
                 <label htmlFor="ct-sub" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
                   Sub-branch <span className="font-normal text-[#001A3D]/45">(optional)</span>
@@ -155,10 +169,11 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                 <select
                   id="ct-sub"
                   name="subBranchId"
+                  value={selectedSubBranch}
+                  onChange={(e) => setSelectedSubBranch(e.target.value)}
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
-                  title="Optional"
                 >
-                  <option value="">None</option>
+                  <option value="">None — whole branch</option>
                   {subBranches.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -166,6 +181,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                   ))}
                 </select>
               </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -245,10 +261,10 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck className="h-4 w-4 text-[#001A3D]/60" />
-                  <span className="text-sm font-medium text-[#001A3D]">Admin / Branch Lead / Sub-branch Lead only</span>
+                  <span className="text-sm font-medium text-[#001A3D]">Leads &amp; above only</span>
                 </div>
                 <p className="mt-0.5 text-xs text-[#001A3D]/50">
-                  Only admins, branch leads, and sub-branch leads will see this task
+                  Only admins, executives, branch leads, and sub-branch leads will see this task
                 </p>
               </div>
             </div>

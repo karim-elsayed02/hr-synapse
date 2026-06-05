@@ -12,15 +12,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { STAFF_PROFILE_ROLES } from "@/lib/utils/permissions";
+import { STAFF_PROFILE_ROLES, type StaffProfileRole } from "@/lib/utils/permissions";
 import {
   BRANCH_SLUGS,
   SUB_BRANCH_SLUGS,
   BRANCH_LABELS,
   SUB_BRANCH_LABELS,
+  BRANCHES_WITH_SUB_BRANCHES,
   normalizeBranchSlug,
   normalizeSubBranchSlug,
 } from "@/lib/utils/org-structure";
+
+const ROLE_LABELS: Record<StaffProfileRole, string> = {
+  admin:           "Admin",
+  executive:       "Executive",
+  branch_lead:     "Branch Lead",
+  sub_branch_lead: "Sub-Branch Lead",
+  staff:           "Staff",
+};
 import type { StaffRow } from "@/app/(main)/staff/page";
 
 type UpdateStaffPayload = {
@@ -163,7 +172,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
               >
                 {STAFF_PROFILE_ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {ROLE_LABELS[r]}
                   </option>
                 ))}
               </select>
@@ -175,9 +184,15 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                   id="edit-branch"
                   required
                   value={form.branch ?? ""}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, branch: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const newBranch = e.target.value;
+                    setForm((p) => ({
+                      ...p,
+                      branch: newBranch,
+                      // clear sub-branch when switching to tutoring or no branch
+                      department: BRANCHES_WITH_SUB_BRANCHES.has(newBranch as never) ? p.department : "",
+                    }));
+                  }}
                   className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                   disabled={loading}
                 >
@@ -189,6 +204,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                   ))}
                 </select>
               </div>
+              {BRANCHES_WITH_SUB_BRANCHES.has(form.branch as never) && (
               <div className="space-y-2">
                 <Label htmlFor="edit-dept">
                   Sub-branch{" "}
@@ -211,6 +227,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                   ))}
                 </select>
               </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-phone">Phone</Label>

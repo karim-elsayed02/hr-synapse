@@ -96,8 +96,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
 
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -196,8 +196,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
 
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -267,8 +267,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
 
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();
@@ -329,8 +329,8 @@ export async function PUT(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
-    if (role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    if (role !== "admin" && role !== "executive") {
+      return NextResponse.json({ error: "Admin or executive access required" }, { status: 403 });
     }
 
     const body = await request.json();

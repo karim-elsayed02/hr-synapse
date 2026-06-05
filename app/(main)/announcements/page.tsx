@@ -55,7 +55,8 @@ function fmtDate(iso: string | null) {
 }
 
 export default function AnnouncementsPage() {
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, isExecutive, loading: authLoading } = useAuth();
+  const isAdminOrExecutive = isAdmin || isExecutive;
   const router = useRouter();
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -66,11 +67,11 @@ export default function AnnouncementsPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
 
   const fetchAnnouncements = useCallback(async () => {
-    const qs = isAdmin ? "?all=true" : "";
+    const qs = isAdminOrExecutive ? "?all=true" : "";
     const res = await fetch(`/api/announcements${qs}`);
     if (res.ok) setAnnouncements(await res.json());
     setLoading(false);
-  }, [isAdmin]);
+  }, [isAdminOrExecutive]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -132,7 +133,7 @@ export default function AnnouncementsPage() {
           </h1>
           <p className="mt-1 text-sm text-[#001A3D]/55">Company news and updates</p>
         </div>
-        {isAdmin && (
+        {isAdminOrExecutive && (
           <Button
             onClick={() => setCreateOpen(true)}
             className="gap-2 rounded-full bg-[#FFB84D] px-5 py-2.5 font-semibold text-[#291800] shadow-md hover:bg-[#f5a84a]"
@@ -188,7 +189,7 @@ export default function AnnouncementsPage() {
                     </div>
                   </div>
 
-                  {isAdmin && (
+                  {isAdminOrExecutive && (
                     <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"

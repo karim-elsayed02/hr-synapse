@@ -55,8 +55,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Profile not found" }, { status: 403 })
   }
 
-  if (profile.role !== "admin" && profile.role !== "branch_lead") {
-    return NextResponse.json({ error: "Only admins and branch leads can create tasks" }, { status: 403 })
+  if (profile.role !== "admin" && profile.role !== "executive" && profile.role !== "branch_lead") {
+    return NextResponse.json({ error: "Only admins, executives, and branch leads can create tasks" }, { status: 403 })
   }
 
   const contentType = request.headers.get("content-type") ?? ""

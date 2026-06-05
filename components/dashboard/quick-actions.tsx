@@ -6,7 +6,8 @@ import { Plus, FileText, Users, Megaphone } from "lucide-react"
 import Link from "next/link"
 
 export function QuickActions() {
-  const { isAdmin, isManager } = useAuth()
+  const { isAdmin, isExecutive, isManager } = useAuth()
+  const isAdminOrExecutive = isAdmin || isExecutive
 
   const actions = [
     {
@@ -14,33 +15,33 @@ export function QuickActions() {
       description: "Leave, expense, or shift swap",
       icon: Plus,
       href: "/requests/new",
-      roles: ["admin", "manager", "staff"],
+      roles: ["executive", "manager", "staff"],
     },
     {
       title: "Upload Document",
       description: "Certificates & compliance",
       icon: FileText,
       href: "/documents/upload",
-      roles: ["admin", "manager", "staff"],
+      roles: ["executive", "manager", "staff"],
     },
     {
       title: "Add Staff Member",
       description: "Register a new team member",
       icon: Users,
       href: "/staff?addStaff=1",
-      roles: ["admin", "manager"],
+      roles: ["executive", "manager"],
     },
     {
       title: "Create Announcement",
       description: "Share updates with the team",
       icon: Megaphone,
       href: "/announcements/new",
-      roles: ["admin", "manager"],
+      roles: ["executive", "manager"],
     },
   ]
 
   const filteredActions = actions.filter((action) => {
-    if (isAdmin) return action.roles.includes("admin")
+    if (isAdminOrExecutive) return action.roles.includes("executive")
     if (isManager) return action.roles.includes("manager")
     return action.roles.includes("staff")
   })

@@ -128,6 +128,8 @@ function roleBadgeClass(role: string | null) {
   const r = role ?? "staff";
   if (r === "admin")
     return "border border-[#001A3D]/25 bg-[#001A3D]/8 text-[#001A3D]";
+  if (r === "executive")
+    return "border border-amber-200 bg-amber-50 text-amber-800";
   if (r === "branch_lead")
     return "border border-sky-200 bg-sky-50 text-sky-800";
   if (r === "sub_branch_lead")
@@ -138,6 +140,7 @@ function roleBadgeClass(role: string | null) {
 function roleLabel(role: string | null) {
   const r = role ?? "staff";
   if (r === "admin") return "ADMIN";
+  if (r === "executive") return "EXECUTIVE";
   if (r === "branch_lead") return "BRANCH LEAD";
   if (r === "sub_branch_lead") return "SUB BRANCH LEAD";
   return "STAFF";
