@@ -176,8 +176,10 @@ export async function notifyRequestDecision(
 
 export async function notifyPayEntryCreated(
   supabase: SupabaseClient,
-  opts: { entryId: string; taskTitle: string; staffName: string },
+  opts: { entryId: string; staffName: string; taskTitle?: string; sourceLabel?: string },
 ) {
+  const source = opts.sourceLabel ?? `task: "${opts.taskTitle ?? "Untitled task"}"`;
+
   const { data: admins } = await supabase
     .from("profiles")
     .select("id")
@@ -189,12 +191,65 @@ export async function notifyPayEntryCreated(
     user_id: a.id,
     type: "pay_entry_created" as const,
     title: "New payroll entry",
-    message: `A payroll entry was created for ${opts.staffName} (task: "${opts.taskTitle}").`,
+    message: `A payroll entry was created for ${opts.staffName} (${source}).`,
     related_entity_type: "payroll_entry",
     related_entity_id: opts.entryId,
   }));
 
   return insertNotifications(supabase, rows);
+}
+
+/** Notify admins when a non-admin submits a work log request. */
+export async function notifyWorkLogRequestSubmitted(
+  supabase: SupabaseClient,
+  opts: {
+    workLogId: string;
+    requesterName: string;
+    workDate: string;
+    hoursWorked: number;
+  },
+) {
+  const { data: admins } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("role", "admin");
+
+  if (!admins || admins.length === 0) return;
+
+  const rows: NotificationPayload[] = admins.map((a) => ({
+    user_id: a.id,
+    type: "request_received" as const,
+    title: "Work log request",
+    message: `${opts.requesterName} submitted ${opts.hoursWorked}h for ${opts.workDate} — awaiting your approval.`,
+    related_entity_type: "work_log",
+    related_entity_id: opts.workLogId,
+  }));
+
+  return insertNotifications(supabase, rows);
+}
+
+export async function notifyWorkLogRequestDecision(
+  supabase: SupabaseClient,
+  opts: {
+    requesterId: string;
+    workLogId: string;
+    workDate: string;
+    approved: boolean;
+    rejectionReason?: string | null;
+  },
+) {
+  const detail = opts.approved
+    ? `Your work log for ${opts.workDate} was approved and a payroll entry was created.`
+    : `Your work log for ${opts.workDate} was rejected${opts.rejectionReason ? `: ${opts.rejectionReason}` : "."}`;
+
+  return single(supabase, {
+    user_id: opts.requesterId,
+    type: opts.approved ? "request_approved" : "request_rejected",
+    title: opts.approved ? "Work log approved" : "Work log rejected",
+    message: detail,
+    related_entity_type: "work_log",
+    related_entity_id: opts.workLogId,
+  });
 }
 
 export async function notifyPayEntryPaid(

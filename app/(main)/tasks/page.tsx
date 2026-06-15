@@ -22,6 +22,7 @@ import { TaskAttachmentPreview } from "@/components/tasks/task-attachment-previe
 import { RecentTaskLogs } from "@/components/tasks/recent-task-logs";
 import { attachmentFileLabel } from "@/lib/task-attachments";
 import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
+import { filterAssignableStaff, type CreatorProfileSlice, type StaffProfileSlice } from "@/lib/utils/task-assignees";
 import { CalendarDays, SlidersHorizontal, ShieldCheck } from "lucide-react";
 
 type TaskPriority = "low" | "medium" | "high";
@@ -31,6 +32,8 @@ type TaskRow = {
   title: string;
   description: string | null;
   assigned_hours: number;
+  payment_mode?: "hours" | "fixed" | null;
+  fixed_payment_amount?: number | null;
   status: "open" | "claimed" | "in_progress" | "completed" | "approved" | "cancelled";
   due_date: string | null;
   created_at: string;
@@ -85,6 +88,16 @@ function tagColor(name: string | null) {
   return TAG_COLORS[h % TAG_COLORS.length];
 }
 
+function formatTaskCompensation(task: TaskRow): string {
+  if (task.payment_mode === "fixed" && task.fixed_payment_amount != null) {
+    const amount = Number(task.fixed_payment_amount);
+    if (!Number.isNaN(amount)) {
+      return `£${amount.toFixed(2)} fixed`;
+    }
+  }
+  return `${task.assigned_hours}h allocated`;
+}
+
 function formatShortDate(iso: string | null) {
   if (!iso) return null;
   try {
@@ -118,18 +131,39 @@ export default async function TasksPage() {
     );
   }
 
+  const TASK_SELECT_WITH_PAYMENT = `
+    id, title, description, assigned_hours, payment_mode, fixed_payment_amount,
+    status, due_date,
+    created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin, priority,
+    branch:branches(id, name),
+    sub_branch:sub_branches(id, name),
+    claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
+  `;
+
+  const TASK_SELECT_LEGACY = `
+    id, title, description, assigned_hours,
+    status, due_date,
+    created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin, priority,
+    branch:branches(id, name),
+    sub_branch:sub_branches(id, name),
+    claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
+  `;
+
+  let taskResult = await supabase
+    .from("tasks")
+    .select(TASK_SELECT_WITH_PAYMENT)
+    .order("created_at", { ascending: false });
+
+  if (taskResult.error?.code === "42703") {
+    taskResult = await supabase
+      .from("tasks")
+      .select(TASK_SELECT_LEGACY)
+      .order("created_at", { ascending: false });
+  }
+
   const [{ data: taskData, error: taskError }, { data: branchData }, { data: subBranchData }] =
     await Promise.all([
-      supabase
-        .from("tasks")
-        .select(`
-          id, title, description, assigned_hours, status, due_date,
-          created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin, priority,
-          branch:branches(id, name),
-          sub_branch:sub_branches(id, name),
-          claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
-        `)
-        .order("created_at", { ascending: false }),
+      Promise.resolve(taskResult),
       supabase.from("branches").select("id, name").order("name"),
       supabase.from("sub_branches").select("id, name").order("name"),
     ]);
@@ -143,7 +177,11 @@ export default async function TasksPage() {
     );
   }
 
-  const allTasks = (taskData ?? []) as unknown as TaskRow[];
+  const allTasks = ((taskData ?? []) as unknown as TaskRow[]).map((t) => ({
+    ...t,
+    payment_mode: t.payment_mode ?? "hours",
+    fixed_payment_amount: t.fixed_payment_amount ?? null,
+  }));
   const branches = ((branchData ?? []) as unknown as BranchRow[]).filter((b) =>
     isAllowedBranchName(b.name)
   );
@@ -202,13 +240,22 @@ export default async function TasksPage() {
     return taskSubBranchSlug === userSubBranchSlug;
   });
 
-  let staffForAssign: { id: string; full_name: string | null }[] = [];
+  const creatorProfile = {
+    role: profile.role,
+    branch: profile.branch,
+    department: profile.department,
+  };
+
+  let assignableStaff: StaffProfileSlice[] = [];
   if (canCreate) {
     const { data: staffRows } = await supabase
       .from("profiles")
-      .select("id, full_name")
+      .select("id, full_name, branch, department, role, active")
       .order("full_name");
-    staffForAssign = (staffRows ?? []) as { id: string; full_name: string | null }[];
+    assignableStaff = filterAssignableStaff(
+      creatorProfile,
+      (staffRows ?? []) as StaffProfileSlice[]
+    );
   }
 
   const openTasks = sortByPriority(tasks.filter((t) => t.status === "open"));
@@ -233,7 +280,13 @@ export default async function TasksPage() {
             <SlidersHorizontal className="h-4 w-4" />
             Filters
           </button>
-          <CreateTaskSheet canCreate={canCreate} branches={branches} subBranches={subBranches} />
+          <CreateTaskSheet
+            canCreate={canCreate}
+            branches={branches}
+            subBranches={subBranches}
+            creator={creatorProfile}
+            assignableStaff={assignableStaff}
+          />
         </div>
       </div>
 
@@ -253,7 +306,8 @@ export default async function TasksPage() {
               isAdmin={isAdminOrExecutive}
               isManager={canCreate}
               canDelete={canDeleteTask}
-              staff={staffForAssign}
+              staff={assignableStaff}
+              creator={creatorProfile}
             />
           ))}
         </KanbanColumn>
@@ -272,7 +326,8 @@ export default async function TasksPage() {
               isAdmin={isAdminOrExecutive}
               isManager={canCreate}
               canDelete={canDeleteTask}
-              staff={staffForAssign}
+              staff={assignableStaff}
+              creator={creatorProfile}
             />
           ))}
         </KanbanColumn>
@@ -291,7 +346,8 @@ export default async function TasksPage() {
               isAdmin={isAdminOrExecutive}
               isManager={canCreate}
               canDelete={canDeleteTask}
-              staff={staffForAssign}
+              staff={assignableStaff}
+              creator={creatorProfile}
             />
           ))}
         </KanbanColumn>
@@ -365,18 +421,26 @@ function TaskCard({
   isManager,
   canDelete,
   staff,
+  creator,
 }: {
   task: TaskRow;
   userId: string;
   isAdmin: boolean;
   isManager: boolean;
   canDelete: boolean;
-  staff: { id: string; full_name: string | null }[];
+  staff: StaffProfileSlice[];
+  creator: CreatorProfileSlice;
 }) {
   const branch = rel(task.branch);
+  const subBranch = rel(task.sub_branch);
   const claimer = rel(task.claimed_by_profile);
   const progress = statusProgress(task.status);
   const tag = tagColor(branch?.name ?? null);
+
+  const assigneesForTask = filterAssignableStaff(creator, staff, {
+    branchSlug: normalizeBranchSlug(branch?.name),
+    subBranchSlug: normalizeSubBranchSlug(subBranch?.name),
+  });
 
   const isTerminal = task.status === "approved";
   const isLocked = task.status === "completed" || task.status === "approved";
@@ -386,7 +450,7 @@ function TaskCard({
     task.status === "claimed" && (task.claimed_by === userId || isManager);
   const canComplete = task.status === "in_progress" && task.claimed_by === userId;
   const canApprove = isAdmin && task.status === "completed";
-  const canAssign = isManager && !isLocked;
+  const canAssign = isManager && !isLocked && assigneesForTask.length > 0;
   const canUnassign =
     isManager &&
     !isLocked &&
@@ -495,15 +559,15 @@ function TaskCard({
         )}
       </div>
 
-      {/* Hours badge */}
+      {/* Compensation badge */}
       <div className="mt-3 inline-flex items-center gap-1 rounded-md bg-[#001A3D]/5 px-2 py-1 text-[10px] font-medium text-[#001A3D]/60">
-        {task.assigned_hours}h allocated
+        {formatTaskCompensation(task)}
       </div>
 
       {/* Action buttons */}
       {hasAction && (
         <div className="mt-4 space-y-3">
-          {canAssign && staff.length > 0 && (
+          {canAssign && (
             <form action={assignTaskToUser} className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
               <input type="hidden" name="taskId" value={task.id} />
               <select
@@ -515,7 +579,7 @@ function TaskCard({
                 <option value="" disabled>
                   {task.claimed_by ? "Reassign to…" : "Assign to…"}
                 </option>
-                {staff.map((s) => (
+                {assigneesForTask.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.full_name || s.id.slice(0, 8)}
                   </option>

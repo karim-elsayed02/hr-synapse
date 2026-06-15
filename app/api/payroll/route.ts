@@ -47,6 +47,7 @@ export async function GET() {
       .select(`
         id,
         task_id,
+        work_log_id,
         profile_id,
         hours,
         hourly_rate,
@@ -56,6 +57,7 @@ export async function GET() {
         payroll_batch_id,
         created_at,
         task:tasks!payroll_entries_task_id_fkey(id, title, assigned_hours, status, approved_at),
+        work_log:staff_work_logs!payroll_entries_work_log_id_fkey(id, work_date, description, hours_worked),
         profile:profiles!payroll_entries_profile_id_fkey(id, full_name, email, role, branch)
       `)
       .order("created_at", { ascending: false });
@@ -65,6 +67,37 @@ export async function GET() {
     }
 
     const { data, error: fetchError } = await query;
+
+    if (fetchError?.code === "42703") {
+      let fallbackQuery = supabase
+        .from("payroll_entries")
+        .select(`
+          id,
+          task_id,
+          profile_id,
+          hours,
+          hourly_rate,
+          total_pay,
+          status,
+          paid_at,
+          payroll_batch_id,
+          created_at,
+          task:tasks!payroll_entries_task_id_fkey(id, title, assigned_hours, status, approved_at),
+          profile:profiles!payroll_entries_profile_id_fkey(id, full_name, email, role, branch)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (role !== "admin" && role !== "executive") {
+        fallbackQuery = fallbackQuery.eq("profile_id", user.id);
+      }
+
+      const { data: fallbackData, error: fallbackErr } = await fallbackQuery;
+      if (fallbackErr) {
+        console.error("GET /api/payroll fallback failed:", fallbackErr);
+        return NextResponse.json({ error: "Failed to load payroll data" }, { status: 500 });
+      }
+      return NextResponse.json(fallbackData ?? []);
+    }
 
     if (fetchError) {
       console.error("GET /api/payroll failed:", fetchError);
@@ -99,6 +132,8 @@ export async function PUT() {
         id,
         title,
         assigned_hours,
+        payment_mode,
+        fixed_payment_amount,
         approved_at,
         claimed_by,
         claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name, email, role, branch, hourly_rate)
@@ -154,7 +189,7 @@ export async function POST(request: NextRequest) {
 
     const { data: task, error: taskErr } = await supabase
       .from("tasks")
-      .select("id, status, claimed_by, assigned_hours")
+      .select("id, status, claimed_by, assigned_hours, payment_mode, fixed_payment_amount")
       .eq("id", task_id)
       .single();
 
@@ -168,36 +203,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Task has no assigned staff member" }, { status: 400 });
     }
 
-    const { data: payProfile, error: profErr } = await supabase
-      .from("profiles")
-      .select("hourly_rate")
-      .eq("id", task.claimed_by)
-      .single();
+    const isFixedPay =
+      task.payment_mode === "fixed" &&
+      task.fixed_payment_amount != null &&
+      Number(task.fixed_payment_amount) > 0;
 
-    if (profErr || !payProfile) {
-      return NextResponse.json({ error: "Could not load staff profile for this task" }, { status: 400 });
+    let hours: number;
+    let hourly_rate: number;
+    let total_pay: number;
+
+    if (isFixedPay) {
+      total_pay = Math.round(Number(task.fixed_payment_amount) * 100) / 100;
+      hours = 1;
+      hourly_rate = total_pay;
+    } else {
+      const { data: payProfile, error: profErr } = await supabase
+        .from("profiles")
+        .select("hourly_rate")
+        .eq("id", task.claimed_by)
+        .single();
+
+      if (profErr || !payProfile) {
+        return NextResponse.json({ error: "Could not load staff profile for this task" }, { status: 400 });
+      }
+
+      hourly_rate = parseFloat(String(payProfile.hourly_rate ?? ""));
+      if (Number.isNaN(hourly_rate) || hourly_rate <= 0) {
+        return NextResponse.json(
+          {
+            error:
+              "This staff member has no hourly rate on their profile. Set it in Staff Directory before adding payroll.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const baseHours = parseFloat(String(task.assigned_hours ?? "0"));
+      hours =
+        !Number.isNaN(hoursFromBody) && hoursFromBody > 0 ? hoursFromBody : baseHours;
+
+      if (hours <= 0) {
+        return NextResponse.json({ error: "Hours must be greater than 0 (set task hours or override)" }, { status: 400 });
+      }
+
+      total_pay = hours * hourly_rate;
     }
-
-    const hourly_rate = parseFloat(String(payProfile.hourly_rate ?? ""));
-    if (Number.isNaN(hourly_rate) || hourly_rate <= 0) {
-      return NextResponse.json(
-        {
-          error:
-            "This staff member has no hourly rate on their profile. Set it in Staff Directory before adding payroll.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const baseHours = parseFloat(String(task.assigned_hours ?? "0"));
-    const hours =
-      !Number.isNaN(hoursFromBody) && hoursFromBody > 0 ? hoursFromBody : baseHours;
-
-    if (hours <= 0) {
-      return NextResponse.json({ error: "Hours must be greater than 0 (set task hours or override)" }, { status: 400 });
-    }
-
-    const total_pay = hours * hourly_rate;
 
     const { data, error: insertError } = await supabase
       .from("payroll_entries")

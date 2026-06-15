@@ -96,8 +96,18 @@ export function canMakeAnnouncements(user: User): boolean {
   return isExecutiveTeam(user) || isBranchLead(user)
 }
 
-/** Staff work log (timesheet diary) — admin, executive, and branch leads only. */
+/** Any authenticated staff member can open the work log page (submit or review). */
 export function canAccessStaffWorkLog(role: string | null | undefined): boolean {
+  return isStaffProfileRole(role ?? "")
+}
+
+/** Admin and executive can approve/reject work log requests. */
+export function canApproveWorkLog(role: string | null | undefined): boolean {
+  return role === "admin" || role === "executive"
+}
+
+/** Elevated roles see all work logs; others only see their own (enforced in page/API). */
+export function canViewAllWorkLogs(role: string | null | undefined): boolean {
   return role === "admin" || role === "executive" || role === "branch_lead"
 }
 

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { removeTaskAttachmentStorage } from "@/lib/task-attachments";
-import { normalizeBranchSlug } from "@/lib/utils/org-structure";
+import { normalizeBranchSlug, normalizeSubBranchSlug } from "@/lib/utils/org-structure";
+import { canAssignToProfile } from "@/lib/utils/task-assignees";
 import { assertBranchExists, assertSubBranchExists } from "@/lib/utils/sub-branch-branch";
 import { isManagerLikeRole } from "@/lib/utils/permissions";
 import {
@@ -33,7 +34,7 @@ async function requireUser() {
 
   const { data: profile, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, branch")
+    .select("id, full_name, role, branch, department")
     .eq("id", user.id)
     .single();
 
@@ -328,7 +329,7 @@ export async function assignTaskToUser(formData: FormData) {
 
   const { data: task, error: taskErr } = await supabase
     .from("tasks")
-    .select("status")
+    .select("status, branch:branches(name), sub_branch:sub_branches(name)")
     .eq("id", taskId)
     .single();
 
@@ -337,13 +338,31 @@ export async function assignTaskToUser(formData: FormData) {
     throw new Error("Cannot assign completed or approved tasks");
   }
 
+  const br = task.branch as { name: string } | { name: string }[] | null;
+  const sub = task.sub_branch as { name: string } | { name: string }[] | null;
+  const branchName = Array.isArray(br) ? br[0]?.name ?? null : br?.name ?? null;
+  const subName = Array.isArray(sub) ? sub[0]?.name ?? null : sub?.name ?? null;
+
   const { data: assignee, error: profileErr } = await supabase
     .from("profiles")
-    .select("id")
+    .select("id, full_name, role, branch, department, active")
     .eq("id", assigneeId)
     .maybeSingle();
 
   if (profileErr || !assignee) throw new Error("User not found");
+
+  if (
+    !canAssignToProfile(
+      { role: profile.role, branch: profile.branch, department: profile.department },
+      assignee,
+      {
+        branchSlug: normalizeBranchSlug(branchName ?? ""),
+        subBranchSlug: normalizeSubBranchSlug(subName ?? ""),
+      }
+    )
+  ) {
+    throw new Error("You cannot assign this task to that person based on your access level");
+  }
 
   const nextStatus = task.status === "in_progress" ? "in_progress" : "claimed";
 

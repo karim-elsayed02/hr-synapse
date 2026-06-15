@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -11,7 +11,12 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Loader2, ShieldCheck } from "lucide-react";
 import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
-import { normalizeBranchSlug, BRANCHES_WITH_SUB_BRANCHES } from "@/lib/utils/org-structure";
+import { normalizeBranchSlug, normalizeSubBranchSlug, BRANCHES_WITH_SUB_BRANCHES } from "@/lib/utils/org-structure";
+import {
+  filterAssignableStaff,
+  type CreatorProfileSlice,
+  type StaffProfileSlice,
+} from "@/lib/utils/task-assignees";
 
 interface Branch {
   id: string;
@@ -23,21 +28,43 @@ interface CreateTaskSheetProps {
   canCreate: boolean;
   branches: Branch[];
   subBranches: SubBranchRow[];
+  creator: CreatorProfileSlice;
+  assignableStaff: StaffProfileSlice[];
 }
 
-export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTaskSheetProps) {
+export function CreateTaskSheet({
+  canCreate,
+  branches,
+  subBranches,
+  creator,
+  assignableStaff,
+}: CreateTaskSheetProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedSubBranch, setSelectedSubBranch] = useState("");
+  const [selectedAssignee, setSelectedAssignee] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"hours" | "fixed">("hours");
   const [isAdminOnly, setIsAdminOnly] = useState(false);
 
   /** True when the selected branch supports sub-branches (Medical or Dental). */
   const selectedBranchName = branches.find((b) => b.id === selectedBranch)?.name ?? "";
   const branchSupportsSubBranches = BRANCHES_WITH_SUB_BRANCHES.has(
     normalizeBranchSlug(selectedBranchName) as never
+  );
+
+  const selectedSubBranchName =
+    subBranches.find((s) => s.id === selectedSubBranch)?.name ?? "";
+
+  const assigneesForTask = useMemo(
+    () =>
+      filterAssignableStaff(creator, assignableStaff, {
+        branchSlug: normalizeBranchSlug(selectedBranchName),
+        subBranchSlug: normalizeSubBranchSlug(selectedSubBranchName),
+      }),
+    [creator, assignableStaff, selectedBranchName, selectedSubBranchName]
   );
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -47,6 +74,15 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
     try {
       const fd = new FormData(e.currentTarget);
       fd.set("is_admin", isAdminOnly ? "true" : "false");
+      fd.set("paymentMode", paymentMode);
+      if (paymentMode === "hours") {
+        fd.delete("fixedPaymentAmount");
+      } else {
+        fd.delete("assignedHours");
+      }
+      if (!selectedAssignee) {
+        fd.delete("assigneeId");
+      }
 
       const res = await fetch("/api/tasks/create-tasks", {
         method: "POST",
@@ -64,6 +100,8 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
       setOpen(false);
       setSelectedBranch("");
       setSelectedSubBranch("");
+      setSelectedAssignee("");
+      setPaymentMode("hours");
       setIsAdminOnly(false);
       router.refresh();
     } catch (err) {
@@ -151,6 +189,7 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                   onChange={(e) => {
                     setSelectedBranch(e.target.value);
                     setSelectedSubBranch("");
+                    setSelectedAssignee("");
                   }}
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
                 >
@@ -170,7 +209,10 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                   id="ct-sub"
                   name="subBranchId"
                   value={selectedSubBranch}
-                  onChange={(e) => setSelectedSubBranch(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedSubBranch(e.target.value);
+                    setSelectedAssignee("");
+                  }}
                   className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
                 >
                   <option value="">None — whole branch</option>
@@ -184,22 +226,70 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="ct-hours" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
-                  Assigned hours
-                </label>
-                <input
-                  id="ct-hours"
-                  name="assignedHours"
-                  type="number"
-                  min="0.25"
-                  step="0.25"
-                  defaultValue="1"
-                  required
-                  className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
-                />
+            <div>
+              <label className="mb-2 block text-sm font-medium text-[#001A3D]/80">
+                Payment
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("hours")}
+                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                    paymentMode === "hours"
+                      ? "bg-[#001A3D] text-[#FFB84D]"
+                      : "bg-[#f8f9fa] text-[#001A3D]/70 hover:bg-[#f3f4f5]"
+                  }`}
+                >
+                  By hours
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("fixed")}
+                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                    paymentMode === "fixed"
+                      ? "bg-[#001A3D] text-[#FFB84D]"
+                      : "bg-[#f8f9fa] text-[#001A3D]/70 hover:bg-[#f3f4f5]"
+                  }`}
+                >
+                  Fixed amount (£)
+                </button>
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {paymentMode === "hours" ? (
+                <div>
+                  <label htmlFor="ct-hours" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
+                    Assigned hours
+                  </label>
+                  <input
+                    id="ct-hours"
+                    name="assignedHours"
+                    type="number"
+                    min="0.25"
+                    step="0.25"
+                    defaultValue="1"
+                    required
+                    className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="ct-fixed" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
+                    Fixed payment (GBP)
+                  </label>
+                  <input
+                    id="ct-fixed"
+                    name="fixedPaymentAmount"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="e.g. 25"
+                    required
+                    className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+                  />
+                </div>
+              )}
 
               <div>
                 <label htmlFor="ct-due" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
@@ -213,6 +303,34 @@ export function CreateTaskSheet({ canCreate, branches, subBranches }: CreateTask
                 />
               </div>
             </div>
+
+            {assignableStaff.length > 0 && (
+              <div>
+                <label htmlFor="ct-assignee" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
+                  Assign to{" "}
+                  <span className="font-normal text-[#001A3D]/45">(optional — leave unassigned to post openly)</span>
+                </label>
+                <select
+                  id="ct-assignee"
+                  name="assigneeId"
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                  className="w-full rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D] focus:outline-none focus:ring-2 focus:ring-[#FFB84D]/40"
+                >
+                  <option value="">No one — post as open task</option>
+                  {assigneesForTask.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name || s.id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+                {selectedBranch && assigneesForTask.length === 0 && (
+                  <p className="mt-1 text-xs text-[#001A3D]/45">
+                    No assignable staff for this branch{selectedSubBranch ? " / sub-branch" : ""} in your access level.
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <label htmlFor="ct-file" className="mb-1.5 block text-sm font-medium text-[#001A3D]/80">
                 Attachment (optional)

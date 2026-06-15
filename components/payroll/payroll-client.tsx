@@ -47,6 +47,27 @@ type TaskRef = {
   approved_at: string | null;
 };
 
+type WorkLogRef = {
+  id: string;
+  work_date: string;
+  description: string;
+  hours_worked: number;
+};
+
+function payrollEntrySourceLabel(entry: {
+  task: TaskRef | TaskRef[] | null;
+  work_log?: WorkLogRef | WorkLogRef[] | null;
+}): string {
+  const task = one(entry.task);
+  if (task?.title) return task.title;
+  const wl = one(entry.work_log ?? null);
+  if (wl) {
+    const desc = wl.description?.trim();
+    return desc ? `Work log: ${desc.slice(0, 60)}` : `Work log (${wl.work_date})`;
+  }
+  return "—";
+}
+
 type ProfileRef = {
   id: string;
   full_name: string | null;
@@ -58,7 +79,8 @@ type ProfileRef = {
 
 type PayrollEntry = {
   id: string;
-  task_id: string;
+  task_id: string | null;
+  work_log_id?: string | null;
   profile_id: string;
   hours: number;
   hourly_rate: number;
@@ -68,6 +90,7 @@ type PayrollEntry = {
   payroll_batch_id: string | null;
   created_at: string;
   task: TaskRef | TaskRef[] | null;
+  work_log?: WorkLogRef | WorkLogRef[] | null;
   profile: ProfileRef | ProfileRef[] | null;
 };
 
@@ -75,10 +98,20 @@ type ApprovedTask = {
   id: string;
   title: string;
   assigned_hours: number;
+  payment_mode?: "hours" | "fixed" | null;
+  fixed_payment_amount?: number | null;
   approved_at: string | null;
   claimed_by: string;
   claimed_by_profile: ProfileRef | ProfileRef[] | null;
 };
+
+function formatApprovedTaskPayLabel(task: ApprovedTask): string {
+  if (task.payment_mode === "fixed" && task.fixed_payment_amount != null) {
+    const amount = Number(task.fixed_payment_amount);
+    if (!Number.isNaN(amount)) return `£${amount.toFixed(2)} fixed`;
+  }
+  return `${task.assigned_hours}h`;
+}
 
 type ProcessedByProfile = {
   id: string;
@@ -223,9 +256,8 @@ function exportCsv(rows: PayrollEntry[]) {
     headers.join(","),
     ...rows.map((r) => {
       const p = one(r.profile);
-      const t = one(r.task);
       const line = Number(r.hours) * Number(r.hourly_rate);
-      return [esc(p?.full_name), esc(p?.email), esc(p?.role), esc(p?.branch), esc(t?.title), r.hours, r.hourly_rate, line, r.status, esc(r.paid_at?.slice(0, 10)), esc(r.created_at?.slice(0, 10))].join(",");
+      return [esc(p?.full_name), esc(p?.email), esc(p?.role), esc(p?.branch), esc(payrollEntrySourceLabel(r)), r.hours, r.hourly_rate, line, r.status, esc(r.paid_at?.slice(0, 10)), esc(r.created_at?.slice(0, 10))].join(",");
     }),
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -357,14 +389,14 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
     const q = query.trim().toLowerCase().replace(/\s+/g, " ");
     const matched = entries.filter((e) => {
       const p = one(e.profile);
-      const t = one(e.task);
+      const sourceLabel = payrollEntrySourceLabel(e);
       const dateBlob = buildEntryDateSearchBlob(e);
       const matchQ =
         !q ||
         (p?.full_name ?? "").toLowerCase().includes(q) ||
         dateBlob.includes(q) ||
         (p?.email ?? "").toLowerCase().includes(q) ||
-        (t?.title ?? "").toLowerCase().includes(q);
+        sourceLabel.toLowerCase().includes(q);
       const matchStatus = statusFilter === "all" || e.status === statusFilter;
       return matchQ && matchStatus;
     });
@@ -397,13 +429,21 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
     profileRateRaw != null && profileRateRaw !== ""
       ? Number(profileRateRaw)
       : NaN;
+  const isFixedTask =
+    selectedTask?.payment_mode === "fixed" &&
+    selectedTask?.fixed_payment_amount != null &&
+    Number(selectedTask.fixed_payment_amount) > 0;
+
   const hoursOverrideNum = parseFloat(hoursOverride);
   const effectiveHours =
     !Number.isNaN(hoursOverrideNum) && hoursOverrideNum > 0
       ? hoursOverrideNum
       : Number(selectedTask?.assigned_hours ?? 0) || 0;
-  const computedPay =
-    !Number.isNaN(profileRate) && profileRate > 0 ? effectiveHours * profileRate : 0;
+  const computedPay = isFixedTask
+    ? Number(selectedTask?.fixed_payment_amount ?? 0)
+    : !Number.isNaN(profileRate) && profileRate > 0
+      ? effectiveHours * profileRate
+      : 0;
 
   /* ---- Entry handlers ---- */
   function resetModal() {
@@ -586,7 +626,11 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                       <SelectContent className="max-h-60">
                         {approvedTasks.map((t) => {
                           const staff = one(t.claimed_by_profile);
-                          return <SelectItem key={t.id} value={t.id}>{t.title} — {staff?.full_name ?? "unassigned"} ({t.assigned_hours}h)</SelectItem>;
+                          return (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.title} — {staff?.full_name ?? "unassigned"} ({formatApprovedTaskPayLabel(t)})
+                            </SelectItem>
+                          );
                         })}
                       </SelectContent>
                     </Select>
@@ -595,17 +639,27 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                 {selectedTask && (
                   <div className="rounded-xl bg-[#f8f9fa] px-4 py-3 text-sm text-[#001A3D]/70 space-y-1">
                     <p><span className="font-medium">Staff:</span> {staffForTask?.full_name ?? "—"}</p>
-                    <p><span className="font-medium">Task hours:</span> {selectedTask.assigned_hours}h</p>
-                    <p>
-                      <span className="font-medium">Profile hourly rate:</span>{" "}
-                      {!Number.isNaN(profileRate) && profileRate > 0 ? (
-                        currency(profileRate)
-                      ) : (
-                        <span className="text-amber-700">Not set — add a rate in Staff Directory first</span>
-                      )}
-                    </p>
+                    {isFixedTask ? (
+                      <p>
+                        <span className="font-medium">Fixed payment:</span>{" "}
+                        {currency(Number(selectedTask.fixed_payment_amount))}
+                      </p>
+                    ) : (
+                      <>
+                        <p><span className="font-medium">Task hours:</span> {selectedTask.assigned_hours}h</p>
+                        <p>
+                          <span className="font-medium">Profile hourly rate:</span>{" "}
+                          {!Number.isNaN(profileRate) && profileRate > 0 ? (
+                            currency(profileRate)
+                          ) : (
+                            <span className="text-amber-700">Not set — add a rate in Staff Directory first</span>
+                          )}
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
+                {!isFixedTask && (
                 <div className="space-y-2">
                   <Label htmlFor="pay-hours">Hours (optional override)</Label>
                   <Input
@@ -621,6 +675,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                   />
                   <p className="text-xs text-[#001A3D]/40">Leave blank to use the task&apos;s assigned hours</p>
                 </div>
+                )}
                 <div className="rounded-xl bg-[#f8f9fa] px-4 py-3">
                   <p className="text-xs font-medium uppercase tracking-wider text-[#001A3D]/45">Total pay (hours × profile rate)</p>
                   <p className="font-display mt-1 text-2xl font-semibold text-[#001A3D]">{currency(computedPay)}</p>
@@ -779,9 +834,9 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                       ) : (
                         paginated.map((row) => {
                           const person = one(row.profile);
-                          const task = one(row.task);
                           const isPaid = row.status === "paid";
                           const lineTotal = Number(row.hours) * Number(row.hourly_rate);
+                          const sourceLabel = payrollEntrySourceLabel(row);
                           return (
                             <tr key={row.id} className="transition-colors hover:bg-[#f8f9fa]/90">
                               <td className="px-6 py-4 align-middle">
@@ -799,7 +854,7 @@ export default function PayrollClient({ isAdmin }: { isAdmin: boolean }) {
                                 <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${roleBadgeClass(person?.role ?? null)}`}>{roleLabel(person?.role ?? null)}</span>
                               </td>
                               <td className="px-4 py-4 align-middle">
-                                <p className="text-sm text-[#001A3D]/80 truncate max-w-[200px]">{task?.title ?? "—"}</p>
+                                <p className="text-sm text-[#001A3D]/80 truncate max-w-[200px]">{sourceLabel}</p>
                               </td>
                               <td className="px-4 py-4 align-middle text-sm font-medium text-[#001A3D]/80">{Number(row.hours).toFixed(1)}</td>
                               <td className="px-4 py-4 align-middle text-sm text-[#001A3D]/80">{currency(Number(row.hourly_rate))}</td>

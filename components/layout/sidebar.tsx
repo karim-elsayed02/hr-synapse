@@ -41,7 +41,7 @@ const navigation: NavItem[] = [
   { name: "Requests", href: "/requests", icon: ClipboardList, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Task Board", href: "/tasks", icon: ListTodo, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Payroll", href: "/payroll", icon: Wallet, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
-  { name: "Work log", href: "/work-log", icon: CalendarClock, allowedFor: ["executive", "branchLead"] },
+  { name: "Work log", href: "/work-log", icon: CalendarClock, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Documents", href: "/documents", icon: FileText, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Announcements", href: "/announcements", icon: Megaphone, allowedFor: ["executive", "branchLead", "mentor", "staff"] },
   { name: "Settings", href: "/settings", icon: Settings, allowedFor: ["admin"] },
