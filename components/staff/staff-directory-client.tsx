@@ -839,8 +839,8 @@ export default function StaffDirectoryClient({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="min-w-0 space-y-6">
           {/* Filters */}
           <div className="curator-card p-6 shadow-[var(--curator-shadow)]">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1254,15 +1254,15 @@ export default function StaffDirectoryClient({
         </div>
 
         {/* Right column widgets */}
-        <aside className="space-y-6">
-          <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#001A3D] to-[#011b3e] p-6 text-white shadow-[var(--curator-shadow)]">
+        <aside className="w-full shrink-0 space-y-6 xl:w-auto">
+          <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#001A3D] to-[#011b3e] p-5 text-white shadow-[var(--curator-shadow)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#FFB84D]/90">
               Workforce pulse
             </p>
             <div className="mt-4 flex items-end justify-between gap-2">
               <div>
                 <p className="text-xs text-white/60">Active now</p>
-                <p className="font-display text-3xl font-semibold text-white">{activePulsePercent}%</p>
+                <p className="font-display text-2xl font-semibold text-white">{activePulsePercent}%</p>
               </div>
             </div>
             <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
@@ -1290,7 +1290,7 @@ export default function StaffDirectoryClient({
           </div>
 
           <div className="curator-card overflow-hidden p-0 shadow-[var(--curator-shadow)]">
-            <div className="relative h-36 bg-gradient-to-br from-[#e8eaed] via-[#f3f4f5] to-[#d4d7dc]">
+            <div className="relative h-28 bg-gradient-to-br from-[#e8eaed] via-[#f3f4f5] to-[#d4d7dc]">
               <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_30%_40%,#001a3d22_0%,transparent_50%)]" />
               <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-[#001A3D] shadow-sm backdrop-blur-sm">
                 <MapPin className="h-4 w-4 text-red-500" />
@@ -1299,8 +1299,8 @@ export default function StaffDirectoryClient({
                   : "Branch map"}
               </div>
             </div>
-            <div className="p-5">
-              <p className="text-sm leading-relaxed text-[#001A3D]/75">
+            <div className="p-4">
+              <p className="text-xs leading-relaxed text-[#001A3D]/75">
                 Branch concentration:{" "}
                 <span className="font-semibold text-[#001A3D]">
                   {branchConcentration.branch}

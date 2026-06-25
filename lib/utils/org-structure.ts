@@ -3,9 +3,9 @@
  * and task branch / sub-branch allowlists (matched against `branches.name` / `sub_branches.name`).
  * Stored profile values are lowercase slugs; use formatters for display.
  *
- * Branches (top-level): Medical, Dental, Tutoring.
+ * Branches (top-level): Medical, Dental, Tutoring, Social.
  * Sub-branches (under Medical and Dental only): Work Experience, Admissions, Education, Events.
- * Tutoring has no sub-branches.
+ * Tutoring and Social have no sub-branches.
  *
  * Keep rows in Supabase `branches` / `sub_branches` aligned with these names so slugify(name)
  * matches (e.g. "Work Experience" → work_experience).
@@ -15,6 +15,7 @@ export const BRANCH_SLUGS = [
   "medical",
   "dental",
   "tutoring",
+  "social",
 ] as const;
 export type BranchSlug = (typeof BRANCH_SLUGS)[number];
 
@@ -26,7 +27,7 @@ export const SUB_BRANCH_SLUGS = [
 ] as const;
 export type SubBranchSlug = (typeof SUB_BRANCH_SLUGS)[number];
 
-/** Branches that support sub-branches. Tutoring is excluded. */
+/** Branches that support sub-branches. Tutoring and Social are excluded. */
 export const BRANCHES_WITH_SUB_BRANCHES: ReadonlySet<BranchSlug> = new Set([
   "medical",
   "dental",
@@ -39,6 +40,7 @@ export const BRANCH_LABELS: Record<BranchSlug, string> = {
   medical: "Medical",
   dental: "Dental",
   tutoring: "Tutoring",
+  social: "Social",
 };
 
 export const SUB_BRANCH_LABELS: Record<SubBranchSlug, string> = {
@@ -53,6 +55,8 @@ const BRANCH_ALIASES: Record<string, BranchSlug> = {
   medical: "medical",
   dental: "dental",
   tutoring: "tutoring",
+  social: "social",
+  social_media: "social",
 };
 
 const SUB_BRANCH_ALIASES: Record<string, SubBranchSlug> = {
@@ -119,7 +123,7 @@ export type BranchDeptValidation =
 
 /**
  * Validate API payloads: empty → null; otherwise must be known slugs.
- * Tutoring branch does not accept sub-branches.
+ * Tutoring and Social do not accept sub-branches.
  */
 export function validateProfileBranchDept(
   branchRaw: unknown,
@@ -144,17 +148,10 @@ export function validateProfileBranchDept(
     };
   }
 
-  if (branch === "tutoring" && department !== null) {
-    return {
-      ok: false,
-      error: "Tutoring branch does not have sub-branches.",
-    };
-  }
-
   if (department !== null && branch !== null && !BRANCHES_WITH_SUB_BRANCHES.has(branch)) {
     return {
       ok: false,
-      error: `Branch '${branch}' does not support sub-branches.`,
+      error: `${formatBranchLabel(branch)} does not support sub-branches.`,
     };
   }
 

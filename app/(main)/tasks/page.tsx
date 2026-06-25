@@ -23,6 +23,7 @@ import { RecentTaskLogs } from "@/components/tasks/recent-task-logs";
 import { attachmentFileLabel } from "@/lib/task-attachments";
 import type { SubBranchRow } from "@/lib/utils/sub-branch-branch";
 import { filterAssignableStaff, type CreatorProfileSlice, type StaffProfileSlice } from "@/lib/utils/task-assignees";
+import { resolveTaskBranchSlugs, resolveTaskBranchScopes, userMatchesTaskBranchScopes, type TaskBranchLink } from "@/lib/utils/task-branches";
 import { CalendarDays, SlidersHorizontal, ShieldCheck } from "lucide-react";
 
 type TaskPriority = "low" | "medium" | "high";
@@ -45,6 +46,7 @@ type TaskRow = {
   priority: TaskPriority;
   branch: { id: string; name: string } | { id: string; name: string }[] | null;
   sub_branch: { id: string; name: string } | { id: string; name: string }[] | null;
+  task_branches?: TaskBranchLink[] | null;
   claimed_by_profile:
     | { id: string; full_name: string | null }
     | { id: string; full_name: string | null }[]
@@ -135,8 +137,12 @@ export default async function TasksPage() {
     id, title, description, assigned_hours, payment_mode, fixed_payment_amount,
     status, due_date,
     created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin, priority,
-    branch:branches(id, name),
-    sub_branch:sub_branches(id, name),
+    branch:branches!tasks_branch_id_fkey(id, name),
+    sub_branch:sub_branches!tasks_sub_branch_id_fkey(id, name),
+    task_branches(
+      branch:branches!task_branches_branch_id_fkey(id, name),
+      sub_branch:sub_branches!task_branches_sub_branch_id_fkey(id, name)
+    ),
     claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
   `;
 
@@ -144,8 +150,8 @@ export default async function TasksPage() {
     id, title, description, assigned_hours,
     status, due_date,
     created_at, claimed_by, branch_id, sub_branch_id, attachment_path, is_admin, priority,
-    branch:branches(id, name),
-    sub_branch:sub_branches(id, name),
+    branch:branches!tasks_branch_id_fkey(id, name),
+    sub_branch:sub_branches!tasks_sub_branch_id_fkey(id, name),
     claimed_by_profile:profiles!tasks_claimed_by_fkey(id, full_name)
   `;
 
@@ -154,7 +160,7 @@ export default async function TasksPage() {
     .select(TASK_SELECT_WITH_PAYMENT)
     .order("created_at", { ascending: false });
 
-  if (taskResult.error?.code === "42703") {
+  if (taskResult.error?.code === "42703" || taskResult.error?.code === "PGRST200" || taskResult.error?.code === "PGRST201") {
     taskResult = await supabase
       .from("tasks")
       .select(TASK_SELECT_LEGACY)
@@ -203,41 +209,20 @@ export default async function TasksPage() {
   const userSubBranchSlug = normalizeSubBranchSlug(profile.department);
 
   const tasks = allTasks.filter((t) => {
-    // Admins and executives see everything
     if (isAdminOrExecutive) return true;
 
-    const taskBranch = rel(t.branch);
-    const taskSubBranch = rel(t.sub_branch);
-
-    // Normalise task-side names for comparison
-    const taskBranchSlug = normalizeBranchSlug(taskBranch?.name);
-    const taskSubBranchSlug = normalizeSubBranchSlug(taskSubBranch?.name);
-
-    // Branch leads: see all tasks in their branch (any sub_branch), including restricted ones
     if (isBranchLead) {
-      if (!taskBranchSlug) return true;
-      return taskBranchSlug === userBranchSlug;
+      const slugs = resolveTaskBranchSlugs(t);
+      return slugs.length === 0 || slugs.includes(userBranchSlug);
     }
 
-    // Sub-branch leads: see restricted (is_admin) tasks too; scoped by branch then sub_branch.
-    // A task with no sub_branch is visible to ALL sub-branch leads in the matching branch,
-    // including when the task is marked is_admin (restricted).
     if (isSubBranchLead) {
-      if (!taskBranchSlug) return true;
-      if (taskBranchSlug !== userBranchSlug) return false;
-      if (!taskSubBranchSlug) return true;
-      return taskSubBranchSlug === userSubBranchSlug;
+      return userMatchesTaskBranchScopes(t, userBranchSlug, userSubBranchSlug);
     }
 
-    // Regular staff: cannot see restricted tasks
     if (t.is_admin) return false;
 
-    // Regular staff: scoped by branch then sub_branch.
-    // null sub_branch → visible to ALL staff in the branch (all sub_branches)
-    if (!taskBranchSlug) return true;
-    if (taskBranchSlug !== userBranchSlug) return false;
-    if (!taskSubBranchSlug) return true;
-    return taskSubBranchSlug === userSubBranchSlug;
+    return userMatchesTaskBranchScopes(t, userBranchSlug, userSubBranchSlug);
   });
 
   const creatorProfile = {
@@ -431,15 +416,18 @@ function TaskCard({
   staff: StaffProfileSlice[];
   creator: CreatorProfileSlice;
 }) {
-  const branch = rel(task.branch);
-  const subBranch = rel(task.sub_branch);
+  const scopeSlugs = resolveTaskBranchScopes(task);
   const claimer = rel(task.claimed_by_profile);
   const progress = statusProgress(task.status);
-  const tag = tagColor(branch?.name ?? null);
 
   const assigneesForTask = filterAssignableStaff(creator, staff, {
-    branchSlug: normalizeBranchSlug(branch?.name),
-    subBranchSlug: normalizeSubBranchSlug(subBranch?.name),
+    branchScopes:
+      scopeSlugs.length > 0
+        ? scopeSlugs.map((s) => ({
+            branchSlug: s.branchSlug,
+            subBranchSlug: s.subBranchSlug,
+          }))
+        : undefined,
   });
 
   const isTerminal = task.status === "approved";
@@ -478,13 +466,18 @@ function TaskCard({
       )}
       {/* Category tag + priority + admin badge */}
       <div className="flex flex-wrap items-center gap-2 pr-10">
-        {branch && (
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tag.bg}`}
-          >
-            {branch.name}
-          </span>
-        )}
+        {scopeSlugs.map((scope) => {
+          const tag = tagColor(scope.branchName);
+          return (
+            <span
+              key={`${scope.branchSlug}-${scope.subBranchSlug ?? "all"}`}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${tag.bg}`}
+            >
+              {scope.branchName}
+              {scope.subBranchName ? ` · ${scope.subBranchName}` : ""}
+            </span>
+          );
+        })}
         <PriorityBadge priority={task.priority ?? "low"} />
         {task.is_admin && (
           <span className="inline-flex items-center gap-1 rounded-md bg-[#001A3D]/10 px-2 py-1 text-[10px] font-semibold text-[#001A3D]">

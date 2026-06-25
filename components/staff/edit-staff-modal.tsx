@@ -189,7 +189,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                     setForm((p) => ({
                       ...p,
                       branch: newBranch,
-                      // clear sub-branch when switching to tutoring or no branch
+                      // clear sub-branch when switching to a branch without sub-branches
                       department: BRANCHES_WITH_SUB_BRANCHES.has(newBranch as never) ? p.department : "",
                     }));
                   }}

@@ -329,7 +329,7 @@ export async function assignTaskToUser(formData: FormData) {
 
   const { data: task, error: taskErr } = await supabase
     .from("tasks")
-    .select("status, branch:branches(name), sub_branch:sub_branches(name)")
+    .select("status, branch:branches!tasks_branch_id_fkey(name), sub_branch:sub_branches!tasks_sub_branch_id_fkey(name)")
     .eq("id", taskId)
     .single();
 
@@ -545,7 +545,7 @@ export async function deleteTask(formData: FormData): Promise<DeleteTaskResult> 
 
     const { data: row, error: fetchErr } = await supabase
       .from("tasks")
-      .select("branch_id, attachment_path, branch:branches(name)")
+      .select("branch_id, attachment_path, branch:branches!tasks_branch_id_fkey(name)")
       .eq("id", taskId)
       .single();
 

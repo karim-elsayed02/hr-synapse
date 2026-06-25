@@ -1,3 +1,5 @@
+import { BRANCH_SLUGS } from "./org-structure"
+
 export type UserRole =
   | "admin"
   | "executive"
@@ -155,7 +157,7 @@ export function canEditUser(currentUser: User, targetUser: User): boolean {
 
 export function getAccessibleBranches(user: User): string[] {
   if (isExecutiveTeam(user)) {
-    return ["medical", "dental", "tutoring"]
+    return [...BRANCH_SLUGS]
   }
 
   if (isManagerLikeRole(user.role) && user.branch) {

@@ -17,7 +17,11 @@ export type CreatorProfileSlice = {
 
 export type TaskScopeSlice = {
   branchSlug?: string | null;
+  /** When set, assignee may belong to any of these branches. */
+  branchSlugs?: string[];
   subBranchSlug?: string | null;
+  /** Per-row branch + optional sub-branch; assignee must match any scope. */
+  branchScopes?: { branchSlug: string; subBranchSlug?: string | null }[];
 };
 
 function isElevated(role: string): boolean {
@@ -65,7 +69,23 @@ export function filterAssignableStaff(
     pool = [];
   }
 
-  if (taskScope?.branchSlug) {
+  if (taskScope?.branchScopes && taskScope.branchScopes.length > 0) {
+    pool = pool.filter((c) => {
+      const cBranch = profileBranchSlug(c);
+      const cDept = profileDeptSlug(c);
+      return taskScope.branchScopes!.some((scope) => {
+        if (!cBranch || cBranch !== scope.branchSlug) return false;
+        if (!scope.subBranchSlug) return true;
+        return !cDept || cDept === scope.subBranchSlug;
+      });
+    });
+  } else if (taskScope?.branchSlugs && taskScope.branchSlugs.length > 0) {
+    const allowed = new Set(taskScope.branchSlugs);
+    pool = pool.filter((c) => {
+      const slug = profileBranchSlug(c);
+      return slug != null && allowed.has(slug);
+    });
+  } else if (taskScope?.branchSlug) {
     pool = pool.filter((c) => profileBranchSlug(c) === taskScope.branchSlug);
   }
 

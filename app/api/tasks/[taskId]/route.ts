@@ -67,7 +67,7 @@ export async function PATCH(request: NextRequest, context: { params: { taskId: s
 
   const { data: taskRow, error: taskErr } = await supabase
     .from("tasks")
-    .select("id, status, attachment_path, branch:branches(name)")
+    .select("id, status, attachment_path, branch:branches!tasks_branch_id_fkey(name)")
     .eq("id", taskId)
     .single();
 

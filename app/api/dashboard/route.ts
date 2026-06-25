@@ -56,7 +56,10 @@ export async function GET() {
     recentDocsRes,
     branchTasksRes,
   ] = await Promise.all([
-    supabase.from("profiles").select("id", { count: "exact", head: true }),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .or("active.is.null,active.eq.true"),
     supabase.from("tasks").select("id", { count: "exact", head: true }).eq("status", "open"),
     supabase
       .from("tasks")
@@ -83,7 +86,7 @@ export async function GET() {
       .limit(5),
     supabase
       .from("tasks")
-      .select("id, status, branch:branches(id, name)"),
+      .select("id, status, branch:branches!tasks_branch_id_fkey(id, name)"),
   ]);
 
   const totalStaff = profilesCountRes.error ? 0 : profilesCountRes.count ?? 0;
