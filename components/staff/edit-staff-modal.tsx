@@ -21,6 +21,7 @@ import {
   BRANCHES_WITH_SUB_BRANCHES,
   normalizeBranchSlug,
   normalizeSubBranchSlug,
+  profileRoleRequiresBranch,
 } from "@/lib/utils/org-structure";
 
 const ROLE_LABELS: Record<StaffProfileRole, string> = {
@@ -96,7 +97,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.branch?.trim()) {
+    if (profileRoleRequiresBranch(form.role) && !form.branch?.trim()) {
       setError("Please select a branch.");
       return;
     }
@@ -164,9 +165,15 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
               <select
                 id="edit-role"
                 value={form.role}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, role: e.target.value }))
-                }
+                onChange={(e) => {
+                  const newRole = e.target.value;
+                  setForm((p) => ({
+                    ...p,
+                    role: newRole,
+                    branch: profileRoleRequiresBranch(newRole) ? p.branch : "",
+                    department: profileRoleRequiresBranch(newRole) ? p.department : "",
+                  }));
+                }}
                 className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                 disabled={loading}
               >
@@ -177,6 +184,7 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                 ))}
               </select>
             </div>
+            {profileRoleRequiresBranch(form.role) ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="edit-branch">Branch</Label>
@@ -189,7 +197,6 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
                     setForm((p) => ({
                       ...p,
                       branch: newBranch,
-                      // clear sub-branch when switching to a branch without sub-branches
                       department: BRANCHES_WITH_SUB_BRANCHES.has(newBranch as never) ? p.department : "",
                     }));
                   }}
@@ -229,6 +236,11 @@ export function EditStaffModal({ staff, onClose, onSaved }: Props) {
               </div>
               )}
             </div>
+            ) : (
+              <p className="text-xs text-[#001A3D]/50">
+                Executive and admin roles are org-wide — branch and sub-branch are not required.
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="edit-phone">Phone</Label>
               <Input

@@ -45,10 +45,12 @@ import {
   SUB_BRANCH_SLUGS,
   BRANCH_LABELS,
   SUB_BRANCH_LABELS,
+  BRANCHES_WITH_SUB_BRANCHES,
   formatBranchLabel,
   formatSubBranchLabel,
   normalizeBranchSlug,
   normalizeSubBranchSlug,
+  profileRoleRequiresBranch,
 } from "@/lib/utils/org-structure";
 import type { StaffRow } from "@/app/(main)/staff/page";
 import { EditStaffModal } from "@/components/staff/edit-staff-modal";
@@ -374,7 +376,7 @@ export default function StaffDirectoryClient({
     setLoading(true);
     setAddStaffError(null);
     const email = addStaffForm.email.trim();
-    if (!addStaffForm.branch?.trim()) {
+    if (profileRoleRequiresBranch(addStaffForm.role) && !addStaffForm.branch?.trim()) {
       setAddStaffError("Please select a branch.");
       setLoading(false);
       return;
@@ -621,9 +623,15 @@ export default function StaffDirectoryClient({
                   <select
                     id="add-role"
                     value={addStaffForm.role}
-                    onChange={(e) =>
-                      setAddStaffForm((p) => ({ ...p, role: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      setAddStaffForm((p) => ({
+                        ...p,
+                        role: newRole,
+                        branch: profileRoleRequiresBranch(newRole) ? p.branch : "",
+                        department: profileRoleRequiresBranch(newRole) ? p.department : "",
+                      }));
+                    }}
                     className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                     disabled={loading}
                   >
@@ -634,6 +642,7 @@ export default function StaffDirectoryClient({
                     ))}
                   </select>
                 </div>
+                {profileRoleRequiresBranch(addStaffForm.role) ? (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="add-branch">Branch</Label>
@@ -642,7 +651,13 @@ export default function StaffDirectoryClient({
                       required
                       value={addStaffForm.branch ?? ""}
                       onChange={(e) =>
-                        setAddStaffForm((p) => ({ ...p, branch: e.target.value }))
+                        setAddStaffForm((p) => ({
+                          ...p,
+                          branch: e.target.value,
+                          department: BRANCHES_WITH_SUB_BRANCHES.has(e.target.value as never)
+                            ? p.department
+                            : "",
+                        }))
                       }
                       className="h-10 w-full rounded-xl border border-[#001A3D]/15 bg-white px-3 text-sm"
                       disabled={loading}
@@ -655,6 +670,7 @@ export default function StaffDirectoryClient({
                       ))}
                     </select>
                   </div>
+                  {BRANCHES_WITH_SUB_BRANCHES.has(addStaffForm.branch as never) ? (
                   <div className="space-y-2">
                     <Label htmlFor="add-dept">
                       Sub-branch{" "}
@@ -677,7 +693,13 @@ export default function StaffDirectoryClient({
                       ))}
                     </select>
                   </div>
+                  ) : null}
                 </div>
+                ) : (
+                  <p className="text-xs text-[#001A3D]/50">
+                    Executive and admin roles are org-wide — branch and sub-branch are not required.
+                  </p>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="add-phone">Phone</Label>
                   <Input

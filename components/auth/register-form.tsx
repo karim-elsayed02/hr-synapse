@@ -18,6 +18,7 @@ import {
   BRANCH_LABELS,
   SUB_BRANCH_LABELS,
   BRANCHES_WITH_SUB_BRANCHES,
+  profileRoleRequiresBranch,
 } from "@/lib/utils/org-structure"
 
 interface RegisterFormProps {
@@ -39,6 +40,7 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
   const [error, setError] = useState<string | null>(null)
   const [selectedBranch, setSelectedBranch] = useState("")
   const [selectedDepartment, setSelectedDepartment] = useState("")
+  const [selectedRole, setSelectedRole] = useState<StaffProfileRole | "">("")
   const { user, profile } = useAuth()
   const { toast } = useToast()
 
@@ -62,6 +64,10 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
       if (selectedBranch) formData.set("branch", selectedBranch)
       if (selectedDepartment && selectedDepartment !== "_none") {
         formData.set("department", selectedDepartment)
+      }
+      if (selectedRole && !profileRoleRequiresBranch(selectedRole)) {
+        formData.delete("branch")
+        formData.delete("department")
       }
     }
 
@@ -101,6 +107,7 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
         event.currentTarget.reset()
         setSelectedBranch("")
         setSelectedDepartment("")
+        setSelectedRole("")
       }
     } catch (err) {
       setError("An unexpected error occurred. Please try again.")
@@ -162,7 +169,19 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
             <>
               <div className="space-y-2">
                 <Label htmlFor="role">Role</Label>
-                <Select name="role" required>
+                <Select
+                  name="role"
+                  required
+                  value={selectedRole || undefined}
+                  onValueChange={(value) => {
+                    const role = value as StaffProfileRole
+                    setSelectedRole(role)
+                    if (!profileRoleRequiresBranch(role)) {
+                      setSelectedBranch("")
+                      setSelectedDepartment("")
+                    }
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
@@ -176,6 +195,8 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                 </Select>
               </div>
 
+              {profileRoleRequiresBranch(selectedRole) ? (
+              <>
               <div className="space-y-2">
                 <Label htmlFor="branch">Branch</Label>
                 <Select
@@ -227,6 +248,12 @@ export function RegisterForm({ isAdminCreating = false }: RegisterFormProps) {
                 </Select>
               </div>
               )}
+              </>
+              ) : selectedRole ? (
+                <p className="text-xs text-muted-foreground">
+                  Executive and admin roles are org-wide — branch and sub-branch are not required.
+                </p>
+              ) : null}
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>

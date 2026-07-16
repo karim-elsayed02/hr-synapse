@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { isStaffProfileRole } from "@/lib/utils/permissions";
-import { validateProfileBranchDept } from "@/lib/utils/org-structure";
+import { validateProfileBranchDept, profileRoleRequiresBranch } from "@/lib/utils/org-structure";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +59,32 @@ async function getAuthenticatedUserAndRole() {
     role: profile?.role ?? null,
     supabase,
   };
+}
+
+function resolveBranchDeptForRole(
+  role: string,
+  branchRaw: unknown,
+  departmentRaw: unknown,
+): { ok: true; branch: string | null; department: string | null } | { ok: false; error: string } {
+  const branchStr = typeof branchRaw === "string" ? branchRaw.trim() : "";
+  const deptStr = typeof departmentRaw === "string" ? departmentRaw.trim() : "";
+
+  if (!profileRoleRequiresBranch(role)) {
+    if (!branchStr && !deptStr) {
+      return { ok: true, branch: null, department: null };
+    }
+  }
+
+  const branchDept = validateProfileBranchDept(branchRaw, departmentRaw);
+  if (!branchDept.ok) {
+    return branchDept;
+  }
+
+  if (profileRoleRequiresBranch(role) && !branchDept.branch) {
+    return { ok: false, error: "Branch is required for this role." };
+  }
+
+  return branchDept;
 }
 
 export async function GET() {
@@ -119,7 +145,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
-    const branchDept = validateProfileBranchDept(body.branch, body.department);
+    const branchDept = resolveBranchDeptForRole(newRole, body.branch, body.department);
     if (!branchDept.ok) {
       return NextResponse.json({ error: branchDept.error }, { status: 400 });
     }
@@ -220,7 +246,7 @@ export async function PATCH(request: NextRequest) {
 
     const adminClient = getServiceRoleClient();
 
-    const branchDept = validateProfileBranchDept(body.branch, body.department);
+    const branchDept = resolveBranchDeptForRole(newRole, body.branch, body.department);
     if (!branchDept.ok) {
       return NextResponse.json({ error: branchDept.error }, { status: 400 });
     }
@@ -360,7 +386,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
-    const branchDept = validateProfileBranchDept(body.branch, body.department);
+    const branchDept = resolveBranchDeptForRole(newRole, body.branch, body.department);
     if (!branchDept.ok) {
       return NextResponse.json({ error: branchDept.error }, { status: 400 });
     }

@@ -117,6 +117,12 @@ export function isAllowedSubBranchName(name: string | null | undefined): boolean
   return normalizeSubBranchSlug(name ?? "") !== null;
 }
 
+/** Admin and executive are org-wide; branch and sub-branch are optional on their profile. */
+export function profileRoleRequiresBranch(role: string | null | undefined): boolean {
+  if (!role) return true;
+  return role !== "admin" && role !== "executive";
+}
+
 export type BranchDeptValidation =
   | { ok: true; branch: string | null; department: string | null }
   | { ok: false; error: string };
